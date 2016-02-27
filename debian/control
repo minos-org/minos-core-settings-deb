@@ -29,6 +29,9 @@ Description: Minos core settings
             session and bypass passwords authentication for hibernate/shutdown.
         * /etc/sudoers.d/minos
  .
+    - tmpfs: mount /tmp as tmpfs in RAM
+        * /etc/fstab
+ .
     - locales: fix locales when none has been set (default to EN_US)
         *  /etc/default/locale
         *  https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794

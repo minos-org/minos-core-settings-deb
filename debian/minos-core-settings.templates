@@ -1,7 +1,7 @@
 Template: minos-core-settings/settings
 Type: multiselect
-Choices: kernel, sudo, locales, minos-bash, bash_profile, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
-Default: kernel, sudo, locales, minos-bash, bash_profile, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Choices: kernel, sudo, tmpfs, locales, minos-bash, bash_profile, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Default: kernel, sudo, tmpfs, locales, minos-bash, bash_profile, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
 Description: Select the settings to be applied.
  Minos default behavor requires additional settings to fullfill the minos
  experience, all add-ons can be enabled or disabled by marking the
@@ -16,6 +16,10 @@ Description: Select the settings to be applied.
  and bypass passwords authentication for hibernate/shutdown (Required)
  .
     - /etc/sudoers.d/minos
+ .
+ tmpfs: mount /tmp as tmpfs in RAM (Recommended)
+ .
+    - /etc/fstab
  .
  locales: fix locales when none has been set (default to EN_US) (Recommended)
  .

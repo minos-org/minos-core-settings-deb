@@ -77,8 +77,8 @@ _recover_file_on_system_users()
 
 _ensure_setting_is_set()
 {   #ensure setting($1) is enabled in the configuration file($2)
-    #supported files:
     # /etc/sysctl.conf
+    # /etc/fstab
     [ -z "${1}" ]   && return 1
     [ -z "${2}" ]   && return 1
     [ ! -f "${2}" ] && return 1
@@ -218,6 +218,10 @@ _enable_setting()
             busybox sed -i -e "\$ a#includedir /etc/sudoers.d"   /etc/sudoers
             [ ! -f /etc/sudoers.d/minos-core ] && \
                 busybox cp /usr/share/minos/sudoers.d/minos-core /etc/sudoers.d/
+            ;;
+
+        tmpfs)
+            _ensure_setting_is_set "tmpfs /tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0" /etc/fstab
             ;;
 
         locales)
@@ -471,6 +475,10 @@ _disable_setting()
             ;;
 
         sudo) busybox rm -rf /etc/sudoers.d/minos-core ;;
+
+        tmpfs)
+            busybox sed -i "/^tmpfs \/tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0/d" /etc/fstab
+            ;;
 
         locales) : ;;
 
