@@ -1,0 +1,86 @@
+Source: minos-core-settings
+Section: misc
+Priority: extra
+Maintainer: Javier P.L. <chilicuil@ubuntu.com>
+Build-Depends: debhelper (>= 9), dh-exec (>= 0.12)
+Standards-Version: 3.9.4
+Homepage: https://github.com/minos-org/minos-core-settings
+Vcs-Git: git://github.com/minos-org/minos-core-settings-deb.git
+Vcs-Browser: https://github.com/minos-org/minos-core-settings-deb.git
+
+Package: minos-core-settings
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, debconf, login, busybox-static
+#                                                     login => because of /bin/su
+Recommends: git, wget, bash-minos-settings, minos-tools-extra
+Description: Minos core settings
+ This package provides the minimal settings which gives to minos its identity.
+ It's intend to be installed in all environments, even environments where X
+ is not running.
+ .
+ Settings are organized in modules which can be enabled/disabled by system
+ administrators:
+ .
+    - kernel: change swappiness for better general performance, ignore most
+              kernel warnings
+        * /etc/sysctl.conf
+ .
+    - sudo: turn on sudo insults, set a longer (1hr) timeout, define group
+            session and bypass passwords authentication for hibernate/shutdown.
+        * /etc/sudoers.d/minos
+ .
+    - locales: fix locales when none has been set (default to EN_US)
+        *  /etc/default/locale
+        *  https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794
+ .
+    - minos-bash: turn on advanced bash settings and 'vi' mode.
+        * /etc/profile.d/minos-bash.sh
+ .
+    - bash_profile: add local gpg-agent and tmux autolaunchers on incomming
+                    ssh connection.
+        * /etc/skel/.bash_profile
+        * $HOME/.bash_profile
+ .
+    - app-core: install additional apt packages (Experimental)
+                Eg, ~/.minos/config
+                app-core emacs aria2 curl
+ .
+    - app-purge: remove apt packages (Experimental)
+                 Eg, ~/.minos/config
+                 app-purge xinetd sasl2-bin sendmail sendmail-base
+ .
+    - dotfiles: install remote dotfiles on every user home directory.
+                Eg, ~/.minos/config:
+                dotfiles https://github.com/user/dotfiles
+ .
+    - aliases: replace cd, rm and other system applications with minos
+               wrappers.
+        * /etc/skel/.aliases
+ .
+    - vim: setup vim with vundle, a modern plugin manager
+        * https://github.com/chilicuil/vundle
+        * /etc/skel/.vimrc
+        * $HOME/.vimrc
+ .
+    - tmux: setup with tundle, a modern plugin manager
+        * https://github.com/chilicuil/tundle
+        * /etc/skel/.tmux.conf
+        * $HOME/.tmux.conf
+ .
+    - shundle: setup the interactive shell with shundle, a modern plugin manager
+        * https://github.com/chilicuil/shundle
+        * /etc/skel/.profile.d/shundle.sh
+        * $HOME/.shundle/
+ .
+    - hooks: execute a hook script for every user. The script is called with
+             a 'core' parameter and runs as root when defined in
+             /etc/minos/config, otherwise runs as $user for every user who
+             had define it in ~/.minos/config.
+             Eg, ~/.minos/config:
+             hook http://domain.tld/hook
+ .
+ If a $HOME/.minos/not_override file exists modules will not alter files on
+ that user directory.
+ .
+ Run $ sudo dpkg-reconfigure minos-core-settings to enable/disable options
+ (enabled all by default).

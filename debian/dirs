@@ -1,0 +1,5 @@
+etc/sudoers.d
+etc/profile.d
+usr/share/minos/sudoers.d
+usr/share/minos/profile.d
+usr/share/minos/skel/.profile.d

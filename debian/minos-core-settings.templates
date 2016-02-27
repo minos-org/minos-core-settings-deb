@@ -1,0 +1,75 @@
+Template: minos-core-settings/settings
+Type: multiselect
+Choices: kernel, sudo, locales, minos-bash, bash_profile, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Default: kernel, sudo, locales, minos-bash, bash_profile, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Description: Select the settings to be applied.
+ Minos default behavor requires additional settings to fullfill the minos
+ experience, all add-ons can be enabled or disabled by marking the
+ following list
+ .
+ kernel: change swappiness for better general performance, ignore most kernel
+ warnings (Optional)
+ .
+    - /etc/sysctl.conf
+ .
+ sudo: turn on sudo insults, set a longer (1hr) timeout, define group session
+ and bypass passwords authentication for hibernate/shutdown (Required)
+ .
+    - /etc/sudoers.d/minos
+ .
+ locales: fix locales when none has been set (default to EN_US) (Recommended)
+ .
+    - /etc/default/locale
+    - https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794
+ .
+ minos-bash: turn on global advanced bash settings and 'vi' mode, (Recommended)
+ .
+    -/etc/profile.d/minos-bash.sh
+ .
+ bash_profile: add local gpg-agent and tmux autolaunchers on incomming ssh
+ connection (Recommended)
+ .
+    - /etc/skel/.bash_profile
+ .
+ app-core: install additional apt packages (Experimental)
+  Eg, ~/.minos/config
+  app-core emacs aria2 curl
+ .
+ app-purge: remove apt packages (Experimental)
+  Eg, ~/.minos/config
+  app-purge xinetd sasl2-bin sendmail sendmail-base sendmail-bin sensible-mda
+ .
+ dotfiles: install remote dotfiles on every user home directory (Optional)
+  Eg, ~/.minos/config:
+  dotfiles https://github.com/user/dotfiles
+ .
+ aliases: replace cd, rm and other system applications with minos wrappers for
+ improved behavior. (Recommended)
+ .
+    - /etc/skel/.aliases
+ .
+ vim: setup vim with vundle, a modern plugin manager (Optional)
+ .
+    - https://github.com/chilicuil/vundle
+    - $HOME/.vimrc
+ .
+ tmux: setup tmux with tundle, a modern plugin manager (Optional)
+ .
+    - https://github.com/chilicuil/tundle
+    - $HOME/.tmux.conf
+ .
+ shundle: setup the interactive shell with shundle, a modern plugin manager. (Optional)
+ .
+    - https://github.com/chilicuil/shundle
+    - /etc/skel/.profile.d/shundle.sh
+    - $HOME/.shundle/
+ .
+ hooks: execute a hook script for every user. The script is called with
+ a 'core' parameter and runs as root when defined in /etc/minos/config,
+ otherwise as $user for every user who had define it in ~/.minos/config
+ (Optional)
+  Eg, ~/.minos/config:
+  hook http://domain.tld/hook
+ .
+ If a $HOME/.minos/not_override file exists modules will not alter files on
+ that user directory.

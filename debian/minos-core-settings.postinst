@@ -1,0 +1,593 @@
+#!/bin/sh
+
+. /usr/share/debconf/confmodule
+users="$(busybox cat /etc/passwd | busybox awk -F: '{if ($3 >= 1000 && $3 < 60000) print $1}')"
+
+_get_last_file_version()
+{   #get last version of a bunch of .minos-backup.* files
+    [ -z "${1}" ] && return 1
+
+    _getlastversion__files="${1}".minos-backup.*
+    _getlastversion__counter="0"
+
+    for _getlastversion__file in ${_getlastversion__files}; do
+        _getlastversion__counter="$((${_getlastversion__counter} + 1))"
+    done
+
+    if [ "${_getlastversion__counter}" -eq "1" ]; then
+        if [ -e "${_getlastversion__file}" ]; then
+            printf "%s" "${_getlastversion__file}"
+        fi
+    else
+        _getlastversion__newer="${_getlastversion__file}"
+        for _getlastversion__file in ${_getlastversion__files}; do
+            if [ "${_getlastversion__file}" -nt "${_getlastversion__newer}" ]; then
+                _getlastversion__newer="${_getlastversion__file}"
+            fi
+        done
+        if [ -e "${_getlastversion__newer}" ]; then
+            printf "%s" "${_getlastversion__newer}"
+        fi
+    fi
+}
+
+_replace_file_on_system_users()
+{
+    for user in ${users}; do
+        su "${user}" -c "test -f ~/.minos/not_override" && continue
+
+        if su "${user}" -c "test -f ${2}" || su "${user}" -c "test -d ${2}"; then
+            dist_size="$(su "${user}" -c "busybox du -s ${1}"|busybox cut -f1)"
+            user_size="$(su "${user}" -c "busybox du -s ${2}"|busybox cut -f1)"
+            vdotfile="minos-backup.$(busybox date +"%d-%m-%Y-%H:%M")"
+            if [ X"${dist_size}" = X"${user_size}" ]; then
+                continue
+            else
+                printf "%s\\n" "minos-core-settings: old $user's ${2} archive found, replacing and creating backup to ${2}.${vdotfile}"
+                su "${user}" -c "busybox mv ${2} ${2}.${vdotfile}"
+                su "${user}" -c "busybox cp -r ${1} ${2}"
+            fi
+        else
+            su "${user}" -c "busybox cp -r ${1} ${2}"
+        fi
+    done
+}
+
+_recover_file_on_system_users()
+{
+    for user in ${users}; do
+        h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
+        su "${user}" -c "test -f ~/.minos/not_override" && continue
+        archive="$(printf "%s" "${1}" | sed "s:\$HOME:${h}:g;s:~/:${h}/:;s:\"::g;s:\'::g;")"
+
+        last_file="$(_get_last_file_version "${archive}")"
+
+        if su "${user}" -c "test -f ${last_file}" || su "${user}" -c "test -d ${last_file}"; then
+            user_size="$(su "${user}" -c "busybox du -s ${1}"|busybox cut -f1)"
+            last_size="$(su "${user}" -c "busybox du -s ${last_file}"|busybox cut -f1)"
+            if [ X"${last_size}" = X"${user_size}" ]; then
+                continue
+            else
+                printf "%s\\n" "minos-core-settings: old $user's archive found, recovering last version to ${1}"
+                su "${user}" -c "busybox mv ${last_file} ${1}"
+            fi
+        fi
+    done
+}
+
+_ensure_setting_is_set()
+{   #ensure setting($1) is enabled in the configuration file($2)
+    #supported files:
+    # /etc/sysctl.conf
+    [ -z "${1}" ]   && return 1
+    [ -z "${2}" ]   && return 1
+    [ ! -f "${2}" ] && return 1
+
+    _ensuresetting__regex="$(printf   "%s" "${1}" | busybox sed 's: :[ \\t]\\+:g')"
+    _ensuresetting__setting="$(printf "%s" "${1}" | busybox cut -d' ' -f1)"
+
+    if busybox grep "$(printf "^%s" "${_ensuresetting__setting}")" "${2}" >/dev/null; then
+        if ! busybox grep "$(printf "^%s" "${_ensuresetting__regex}")" "${2}" >/dev/null; then
+            busybox sed -i -e "/^${_ensuresetting__setting}/ s:.*:${1}:" "${2}"
+        fi
+    else
+        if busybox grep "$(printf "^#%s[ \t]" "${_ensuresetting__setting}")" "${2}" >/dev/null; then
+            busybox sed -i -e "/^#${_ensuresetting__setting}/ s:#.*:${1}:" "${2}"
+        else
+            busybox sed -i -e "\$ a${1}" "${2}"
+        fi
+    fi
+}
+
+_suspend_dpkg_process()
+{
+    busybox rm -rf /var/lib/dpkg/updates.suspended/
+    busybox mv     /var/lib/dpkg/lock           /var/lib/dpkg/lock.suspended
+    busybox mv     /var/lib/dpkg/updates/       /var/lib/dpkg/updates.suspended
+    busybox mkdir  /var/lib/dpkg/updates/
+    busybox mv     /var/cache/apt/archives/lock /var/cache/apt/archives/lock.suspended
+    busybox cp     /var/lib/dpkg/status         /var/lib/dpkg/status.suspended
+    busybox cp     /var/lib/dpkg/status-old     /var/lib/dpkg/status-orig
+    busybox cp     /var/lib/dpkg/status-orig    /var/lib/dpkg/status
+}
+
+_continue_dpkg_process()
+{
+    busybox rm -rf /var/lib/dpkg/updates
+    busybox mv     /var/lib/dpkg/lock.suspended           /var/lib/dpkg/lock
+    busybox mv     /var/lib/dpkg/updates.suspended        /var/lib/dpkg/updates
+    busybox mv     /var/cache/apt/archives/lock.suspended /var/cache/apt/archives/lock
+    busybox mv     /var/lib/dpkg/status.suspended         /var/lib/dpkg/status
+    busybox mv     /var/lib/dpkg/status-orig              /var/lib/dpkg/status-old
+}
+
+_add_status_apt_queue()
+{
+    busybox cp /var/lib/dpkg/status /var/lib/dpkg/status-append
+    diff="$(busybox diff -u /var/lib/dpkg/status-orig /var/lib/dpkg/status-append | \
+        busybox awk '/^\+/ {if($1 == "+++") {next}; sub(/^\+/,""); print}')"
+
+    #it's important to add and additional \\n at the end to ensure the
+    #format doesn't get weird after several invocations
+    [ -z "${diff}" ] || printf "%s\\n\\n" "${diff}" >> /var/lib/dpkg/status-append-queue
+
+    for pkg; do
+        [ -f /var/lib/dpkg/status-remove-queue ] || continue
+        busybox sed -i '/^'"${pkg}"'$/d' /var/lib/dpkg/status-remove-queue
+    done; unset pkg
+}
+
+_rm_status_apt_queue()
+{
+    for pkg; do
+        printf "%s\\n" "${pkg}" >> /var/lib/dpkg/status-remove-queue
+    done; unset pkg
+}
+
+_append_status_db()
+{
+    [ -f /var/lib/dpkg/status-append-queue ] || return
+
+    while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
+    busybox touch /var/lib/dpkg/lock-custom
+
+    while busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1; do
+        sleep 0.1
+    done
+
+    busybox cat    /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
+    busybox rm -rf /var/lib/dpkg/status-append-queue /var/lib/dpkg/status-append
+
+    busybox rm -rf /var/lib/dpkg/lock-custom
+}
+
+_remove_status_db()
+{
+    [ -f /var/lib/dpkg/status-remove-queue ] && sleep 0.1 || return
+
+    while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
+    busybox touch /var/lib/dpkg/lock-custom
+
+    while busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1; do
+        sleep 0.1
+    done
+
+    for pkg in $(cat /var/lib/dpkg/status-remove-queue); do
+        busybox sed -i '/Package: '"${pkg}"'$/,/^$/d' /var/lib/dpkg/status
+    done; busybox rm -rf /var/lib/dpkg/status-remove-queue
+
+    busybox rm -rf /var/lib/dpkg/lock-custom
+}
+
+_apt_install()
+{
+    [ -z "${1}" ] && return
+    _suspend_dpkg_process
+    apt-get install --no-install-recommends -y --force-yes ${@} >/dev/null 2>&1 ||
+        apt-get install --no-install-recommends -y --force-yes ${@}
+    _add_status_apt_queue ${@}
+    _continue_dpkg_process
+}
+
+_apt_purge()
+{
+    [ -z "${1}" ] && return
+    _suspend_dpkg_process
+    busybox cat /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
+    apt-get purge -y     ${@} >/dev/null 2>&1 || apt-get purge -y ${@}
+    _rm_status_apt_queue ${@}
+    _continue_dpkg_process
+}
+
+_apt_sync_db()
+{
+    _append_status_db &
+    _remove_status_db &
+}
+
+_enable_setting()
+{
+    case "${1}" in
+        kernel)
+            _ensure_setting_is_set "vm.swappiness = 10"      /etc/sysctl.conf
+            _ensure_setting_is_set "kernel.printk = 4 4 1 7" /etc/sysctl.conf
+            ;;
+
+        sudo)
+            busybox sed -i "/^#includedir.*\/etc\/sudoers\.d$/d" /etc/sudoers
+            busybox sed -i -e "\$ a#includedir /etc/sudoers.d"   /etc/sudoers
+            [ ! -f /etc/sudoers.d/minos-core ] && \
+                busybox cp /usr/share/minos/sudoers.d/minos-core /etc/sudoers.d/
+            ;;
+
+        locales)
+            locale-gen en_US en_US.UTF-8 && locale-gen
+            #https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794
+            [ ! -f /etc/default/locale ] && printf "%s\\n%s\\n" \
+                'LANG="en_US.UTF-8"' 'LANGUAGE="en_US:en"' > /etc/default/locale
+            ;;
+
+        minos-bash)
+            [ ! -f /etc/profile.d/minos-bash.sh ] && \
+                busybox cp /usr/share/minos/profile.d/minos-bash.sh /etc/profile.d/minos-bash.sh
+            ;;
+
+        bash_profile)
+            [ ! -f /etc/skel/.bash_profile ] && busybox cp /usr/share/minos/skel/.bash_profile /etc/skel/
+            _replace_file_on_system_users '/etc/skel/.bash_profile' '~/.bash_profile'
+            ;;
+
+        app-core)
+            for user in ${users}; do
+                su "${user}" -c "busybox id | busybox grep '(sudo)\|(admin)\|(wheel)'" >/dev/null 2>&1 || continue
+                h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
+
+                userpkgs="$(busybox awk -v pattern="^app-core"       \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    "${h}"/.minos/config 2>/dev/null)"
+
+                [ -z "${userpkgs}" ] && continue
+
+                printf "%s\\n" "minos-core-settings: installing ${user}'s defined pkgs: ${userpkgs} ..."
+                _apt_install ${userpkgs}
+            done
+
+            globalpkgs="$(busybox awk -v pattern="^app-core"         \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                     /etc/minos/config 2>/dev/null)"
+
+            if [ -n "${globalpkgs}" ]; then
+                printf "%s\\n" "minos-core-settings: installing system defined pkgs: ${globalpkgs} ..."
+                _apt_install ${globalpkgs}
+            fi
+            ;;
+
+        app-purge)
+            for user in ${users}; do
+                su "${user}" -c "busybox id | busybox grep '(sudo)\|(admin)\|(wheel)'" >/dev/null 2>&1 || continue
+                h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
+
+                rm_userpkgs="$(busybox awk -v pattern="^app-core"    \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    "${h}"/.minos/config 2>/dev/null)"
+
+                [ -z "${rm_userpkgs}" ] && continue
+
+                printf "%s\\n" "minos-core-settings: removing ${user}'s defined pkgs: ${rm_userpkgs} ..."
+                _apt_purge ${rm_userpkgs}
+            done
+
+            rm_globalpkgs="$(busybox awk -v pattern="^app-core"      \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                     /etc/minos/config 2>/dev/null)"
+
+            if [ -n "${rm_globalpkgs}" ]; then
+                printf "%s\\n" "minos-core-settings: removing system defined pkgs: ${rm_globalpkgs} ..."
+                _apt_purge ${rm_globalpkgs}
+            fi
+            ;;
+
+         dotfiles)
+            for user in ${users}; do
+                su "${user}" -c "test -f ~/.minos/not_override" && continue
+                h="$(su "${user}" -c "echo ~" 2>/dev/null)"     || continue
+
+                dotrepo="$(busybox awk -v pattern="^dotfiles"        \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    "${h}"/.minos/config 2>/dev/null)"
+
+                if [ -z "${dotrepo}" ]; then
+                    dotrepo="$(busybox awk -v pattern="^dotfiles"    \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    /etc/minos/config 2>/dev/null)"
+                fi
+
+                [ -z "${dotrepo}" ] && continue
+
+                bdotrepo="$(busybox basename "${dotrepo}")"
+                busybox mkdir -p /tmp/minos-core-setting.GTOm0l
+                git clone --depth=1 "${dotrepo}" /tmp/minos-core-setting.GTOm0l/"${bdotrepo}" >/dev/null 2>&1
+
+                for dotfile in /tmp/minos-core-setting.GTOm0l/"${bdotrepo}"/.*; do
+                    [ ! -e "${dotfile}" ] && continue
+                    bdotfile="$(busybox basename "${dotfile}")"
+
+                    if [ X"${bdotfile}" = X"." ] || [ X"${bdotfile}" = X".." ]; then
+                        continue
+                    fi
+
+                    if [ -e "${h}"/"${bdotfile}" ]; then
+                        busybox diff -qr "${dotfile}" "${h}"/"${bdotfile}" >/dev/null 2>&1 && continue
+                    fi
+
+                    ownerdotfile="$(stat -c %U "${h}")" || ownerdotfile="${user}"
+                    groupdotfile="$(stat -c %G "${h}")" || groupdotfile="${user}"
+                    vdotfile="minos-backup.$(busybox date +"%d-%m-%Y-%H:%M")"
+
+                    if [ -e "${h}"/"${bdotfile}" ]; then
+                        printf "%s\\n" "minos-core-settings: old $user's ~/.${bdotfile} archive found, replacing and creating backup to ~/.${bdotfile}.${vdotfile}"
+                        su "${user}" -c "busybox mv \"${h}\"/\"${bdotfile}\" \"${h}\"/\"${bdotfile}\".\"${vdotfile}\"" >/dev/null 2>&1
+                    fi
+
+                    busybox cp    -r "${dotfile}" "${h}"/"${bdotfile}"
+                    busybox chown -R "${ownerdotfile}":"${groupdotfile}" "${h}"/"${bdotfile}"
+
+                    #special case, don't remove ssh keys
+                    old_ssh_conf="$(_get_last_file_version "${h}"/.ssh)"
+                    if [ -n "${old_ssh_conf}" ] && [ ! X"${old_ssh_conf}" = X"${h}"/.ssh ]; then
+                        busybox cp -- "${old_ssh_conf}"/* "${h}"/.ssh/
+                    fi
+                done; busybox rm -rf /tmp/minos-core-setting.GTOm0l/
+            done
+            ;;
+
+       aliases)
+            [ ! -f /etc/skel/.aliases ] && busybox cp /usr/share/minos/skel/.aliases /etc/skel/.aliases
+            _replace_file_on_system_users '/etc/skel/.aliases' '~/.aliases'
+            ;;
+
+        vim)
+            if [ -d /usr/share/minos/skel/.vim/bundle/vundle/.git/ ]; then
+                (cd /usr/share/minos/skel/.vim/bundle/vundle && git pull) >/dev/null 2>&1
+            else
+                busybox rm -rf /usr/share/minos/skel/.vim/bundle/vundle
+                git clone --depth=1 "https://github.com/chilicuil/vundle" \
+                    "/usr/share/minos/skel/.vim/bundle/vundle" >/dev/null 2>&1
+            fi
+
+            busybox rm -rf   /etc/skel/.vim/bundle/vundle
+            busybox mkdir -p /etc/skel/.vim/bundle
+            busybox cp -r    /usr/share/minos/skel/.vim/bundle/vundle /etc/skel/.vim/bundle/
+
+            for user in ${users}; do
+                su "${user}" -c "test -f ~/.minos/not_override" && continue
+                su "${user}" -c "busybox mkdir -p ~/.vim/bundle/" > /dev/null 2>&1
+                su "${user}" -c "test -d ~/.vim/bundle/vundle/" || \
+                    su "${user}" -c "busybox cp -r /etc/skel/.vim/bundle/vundle ~/.vim/bundle/vundle"
+                su "${user}" -c "vim +BundleInstall +qall" >/dev/null 2>&1
+            done
+            ;;
+
+        tmux)
+            if [ -d /usr/share/minos/skel/.tmux/plugins/tundle/.git/ ]; then
+                (cd /usr/share/minos/skel/.tmux/plugins/tundle && git pull) >/dev/null 2>&1
+            else
+                busybox rm -rf /usr/share/minos/skel/.tmux/plugins/tundle
+                git clone --depth=1 "https://github.com/chilicuil/tundle" \
+                    "/usr/share/minos/skel/.tmux/plugins/tundle" >/dev/null 2>&1
+            fi
+
+            busybox rm -rf   /etc/skel/.tmux/plugins/tundle
+            busybox mkdir -p /etc/skel/.tmux/plugins
+            busybox cp -r    /usr/share/minos/skel/.tmux/plugins/tundle /etc/skel/.tmux/plugins/
+
+            for user in ${users}; do
+                su "${user}" -c "test -f ~/.minos/not_override" && continue
+                su "${user}" -c "busybox mkdir -p ~/.tmux/plugins/" > /dev/null 2>&1
+                su "${user}" -c "test -d ~/.tmux/plugins/tundle/" || \
+                    su "${user}" -c "busybox cp -r /etc/skel/.tmux/plugins/tundle ~/.tmux/plugins/tundle"
+                su "${user}" -c "sh ~/.tmux/plugins/tundle/scripts/install_plugins.sh" >/dev/null 2>&1
+            done
+            ;;
+
+        shundle)
+            if [ -d /usr/share/minos/skel/.shundle/bundle/shundle/.git/ ]; then
+                (cd /usr/share/minos/skel/.shundle/bundle/shundle && git pull) > /dev/null 2>&1
+            else
+                busybox rm -rf /usr/share/minos/skel/.shundle
+                git clone --depth=1 "https://github.com/chilicuil/shundle" \
+                    "/usr/share/minos/skel/.shundle/bundle/shundle" >/dev/null 2>&1
+            fi
+
+            busybox rm -rf /etc/skel/.shundle
+            busybox cp -r  /usr/share/minos/skel/.shundle/ /etc/skel/.shundle
+
+            busybox mkdir -p /etc/skel/.profile.d
+            busybox cp /usr/share/minos/skel/.profile.d/shundle.sh /etc/skel/.profile.d/
+
+            for user in ${users}; do
+                su "${user}" -c "test -f ~/.minos/not_override" && continue
+                su "${user}" -c "busybox mkdir ~/.profile.d" >/dev/null 2>&1
+            done
+
+            _replace_file_on_system_users '/etc/skel/.shundle' '~/.shundle'
+            _replace_file_on_system_users '/etc/skel/.profile.d/shundle' '~/.profile.d/shundle'
+
+            for user in ${users}; do
+                su "${user}" -c "test -f ~/.minos/not_override" && continue
+                su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.bashrc
+                ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
+                su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.profile.d/shundle.sh
+                ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
+            done
+            ;;
+
+        hooks)
+            globalhook="$(busybox awk -v pattern="^hook"             \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                     /etc/minos/config 2>/dev/null)"
+
+            if [ -n "${globalhook}" ]; then
+                (su "${user}" -c "busybox wget ${globalhook} -O /bin/minos-core-settings-hook" || \
+                    su "${user}" -c "wget ${globalhook} -O /bin/minos-core-settings-hook") >/dev/null 2>&1
+                if [ -f /bin/minos-core-settings-hook ]; then
+                    busybox chmod +x /bin/minos-core-settings-hook
+                    printf "%s\\n" "minos-core-settings: executing system defined hook: ${globalhook}"
+                    /bin/minos-core-settings-hook core
+                    busybox rm -rf /bin/minos-core-settings-hook
+                fi
+            fi
+
+            for user in ${users}; do
+                su "${user}" -c "test -f ~/.minos/not_override" && continue
+                h="$(su "${user}" -c "echo ~" 2>/dev/null)"     || continue
+
+                userhook="$(busybox awk -v pattern="^hook"           \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    "${h}"/.minos/config 2>/dev/null)"
+
+                [ -z "${userhook}" ] && continue
+
+                (su "${user}" -c "busybox wget ${userhook} -O ~/.minos-core-settings-hook" || \
+                    su "${user}" -c "wget ${userhook} -O ~/.minos-core-settings-hook") >/dev/null 2>&1
+
+                su "${user}" -c "test -f  ~/.minos-core-settings-hook" || continue
+                su "${user}" -c "busybox chmod +x ~/.minos-core-settings-hook"
+
+                printf "%s\\n" "minos-core-settings: executing $user's defined hook: ${userhook}"
+                su "${user}" -c "~/.minos-core-settings-hook core"
+                su "${user}" -c "busybox rm -rf ~/.minos-core-settings-hook"
+            done
+            ;;
+    esac
+}
+
+_disable_setting()
+{
+    case "${1}" in
+        kernel)
+            busybox sed -i "/^vm.swappiness = 10/d"      /etc/sysctl.conf
+            busybox sed -i "/^kernel.printk = 4 4 1 7/d" /etc/sysctl.conf
+            ;;
+
+        sudo) busybox rm -rf /etc/sudoers.d/minos-core ;;
+
+        locales) : ;;
+
+        minos-bash) busybox rm -rf /etc/profile.d/minos-bash.sh ;;
+
+        bash_profile)
+            busybox rm -rf /etc/skel/.bash_profile
+            _recover_file_on_system_users '~/.bash_profile'
+            ;;
+
+        app-core)
+            : #should reverse process?
+            ;;
+
+        app-purge) : ;;
+
+         dotfiles)
+            for user in ${users}; do
+                su "${user}" -c "test -f ~/.minos/not_override" && continue
+                h="$(su "${user}" -c "echo ~" 2>/dev/null)"     || continue
+
+                dotrepo="$(busybox awk -v pattern="^dotfiles"        \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    "${h}"/.minos/config 2>/dev/null)"
+
+                if [ -z "${dotrepo}" ]; then
+                    dotrepo="$(busybox awk -v pattern="^dotfiles"    \
+                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    /etc/minos/config 2>/dev/null)"
+                fi
+
+                [ -z "${dotrepo}" ] && continue
+
+                bdotrepo="$(busybox basename "${dotrepo}")"
+                busybox mkdir -p /tmp/minos-core-setting.GTOm0l
+                git clone --depth=1  "${dotrepo}" /tmp/minos-core-setting.GTOm0l/"${bdotrepo}"   >/dev/null 2>&1
+
+                for dotfile in  /tmp/minos-core-setting.GTOm0l/"${bdotrepo}"/.*; do
+                    [ ! -e "${dotfile}" ] && continue
+                    bdotfile="$(busybox basename "${dotfile}")"
+
+                    #special case, don't recover ssh keys
+                    if [ X"${bdotfile}" = X"." ] || [ X"${bdotfile}" = X".." ] || [ X"${bdotfile}" = X".ssh" ]; then
+                        continue
+                    fi
+
+                    if [ -e "${h}"/"${bdotfile}" ]; then
+                        printf "%s\\n" "minos-core-settings: old $user's ~/.${bdotfile} archive found, recovering last state"
+                        _recover_file_on_system_users "${bdotfile}"
+                    fi
+
+                done; busybox rm -rf /tmp/minos-core-setting.GTOm0l/
+            done
+            ;;
+
+       aliases)
+            busybox rm -rf /etc/skel/.aliases
+            _recover_file_on_system_users '~/.aliases'
+            ;;
+
+        vim)
+            busybox rm -rf /etc/skel/.vim/bundle/vundle
+            busybox rmdir  /etc/skel/.vim/bundle/
+            busybox rmdir  /etc/skel/.vim/
+            ;;
+
+        tmux)
+            busybox rm -rf /etc/skel/.tmux/plugins/tundle
+            busybox rmdir  /etc/skel/.tmux/plugins/
+            busybox rmdir  /etc/skel/.tmux/
+            ;;
+
+        shundle)
+            busybox rm -rf /etc/skel/.shundle/bundle/shundle
+            busybox rmdir  /etc/skel/.shundle/bundle/
+            busybox rmdir  /etc/skel/.shundle/
+            ;;
+
+        hooks) : ;;
+    esac
+}
+
+case "${1}" in
+    configure)
+        #get settings from user
+        db_get minos-core-settings/settings
+        settings="${RET}"
+
+        #get default settings
+        db_metaget minos-core-settings/settings Choices
+        default_settings="${RET}"
+
+        #enable selected items
+        for setting in ${settings}; do
+            setting="${setting%,*}" #remove ',' from tail
+            _enable_setting "${setting}"
+
+            #get not selected items by removing items from the list
+            default_settings="$(printf "%s" "${default_settings}" | busybox sed 's:'"${setting}"'[, ]*::')"
+        done
+
+        #disable not selected items
+        for not_selected_setting in ${default_settings}; do
+            not_selected_setting="${not_selected_setting%,*}" #remove ',' from tail
+            _disable_setting "${not_selected_setting}"
+        done
+
+        #update manually apt/dpkg db in case any package was installed on this iteration
+        _apt_sync_db
+        ;;
+    abort-upgrade|abort-deconfigure|abort-remove)
+        ;;
+    *)
+        printf "%s\\n" "${0} called with unknown argument \`${1}'" 1>&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

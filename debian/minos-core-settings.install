@@ -1,0 +1,8 @@
+#!/usr/bin/dh-exec
+etc.sudoers.d.minos-core      => /usr/share/minos/sudoers.d/minos-core
+etc.profile.d.minos-bash.sh   => /usr/share/minos/profile.d/minos-bash.sh
+etc.skel.bash_profile         => /usr/share/minos/skel/.bash_profile
+etc.skel.aliases              => /usr/share/minos/skel/.aliases
+etc.skel.vimrc                => /usr/share/minos/skel/.vimrc
+etc.skel.tmux.conf            => /usr/share/minos/skel/.tmux.conf
+etc.skel.profile.d.shundle.sh => /usr/share/minos/skel/.profile.d/shundle.sh
