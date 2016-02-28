@@ -415,7 +415,7 @@ _enable_setting()
             done
 
             _replace_file_on_system_users '/etc/skel/.shundle' '~/.shundle'
-            _replace_file_on_system_users '/etc/skel/.profile.d/shundle' '~/.profile.d/shundle'
+            _replace_file_on_system_users '/etc/skel/.profile.d/shundle.sh' '~/.profile.d/shundle.sh'
 
             for user in ${users}; do
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
