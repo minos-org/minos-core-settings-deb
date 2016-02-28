@@ -45,10 +45,10 @@ _replace_file_on_system_users()
             else
                 printf "%s\\n" "minos-core-settings: old $user's ${2} archive found, replacing and creating backup to ${2}.${vdotfile}"
                 su "${user}" -c "busybox mv ${2} ${2}.${vdotfile}"
-                su "${user}" -c "busybox cp -r ${1} ${2}"
+                su "${user}" -c "busybox cp -rL ${1} ${2}"
             fi
         else
-            su "${user}" -c "busybox cp -r ${1} ${2}"
+            su "${user}" -c "busybox cp -rL ${1} ${2}"
         fi
     done
 }
@@ -361,13 +361,13 @@ _enable_setting()
 
             busybox rm -rf   /etc/skel/.vim/bundle/vundle
             busybox mkdir -p /etc/skel/.vim/bundle
-            busybox cp -r    /usr/share/minos/skel/.vim/bundle/vundle /etc/skel/.vim/bundle/
+            busybox cp -rL   /usr/share/minos/skel/.vim/bundle/vundle /etc/skel/.vim/bundle/
 
             for user in ${users}; do
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
                 su "${user}" -c "busybox mkdir -p ~/.vim/bundle/" > /dev/null 2>&1
                 su "${user}" -c "test -d ~/.vim/bundle/vundle/" || \
-                    su "${user}" -c "busybox cp -r /etc/skel/.vim/bundle/vundle ~/.vim/bundle/vundle"
+                    su "${user}" -c "busybox cp -rL /etc/skel/.vim/bundle/vundle ~/.vim/bundle/vundle"
                 su "${user}" -c "vim +BundleInstall +qall" >/dev/null 2>&1
             done
             ;;
@@ -383,13 +383,13 @@ _enable_setting()
 
             busybox rm -rf   /etc/skel/.tmux/plugins/tundle
             busybox mkdir -p /etc/skel/.tmux/plugins
-            busybox cp -r    /usr/share/minos/skel/.tmux/plugins/tundle /etc/skel/.tmux/plugins/
+            busybox cp -rL   /usr/share/minos/skel/.tmux/plugins/tundle /etc/skel/.tmux/plugins/
 
             for user in ${users}; do
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
                 su "${user}" -c "busybox mkdir -p ~/.tmux/plugins/" > /dev/null 2>&1
                 su "${user}" -c "test -d ~/.tmux/plugins/tundle/" || \
-                    su "${user}" -c "busybox cp -r /etc/skel/.tmux/plugins/tundle ~/.tmux/plugins/tundle"
+                    su "${user}" -c "busybox cp -rL /etc/skel/.tmux/plugins/tundle ~/.tmux/plugins/tundle"
                 su "${user}" -c "sh ~/.tmux/plugins/tundle/scripts/install_plugins.sh" >/dev/null 2>&1
             done
             ;;
@@ -404,7 +404,7 @@ _enable_setting()
             fi
 
             busybox rm -rf /etc/skel/.shundle
-            busybox cp -r  /usr/share/minos/skel/.shundle/ /etc/skel/.shundle
+            busybox cp -rL /usr/share/minos/skel/.shundle/ /etc/skel/.shundle
 
             busybox mkdir -p /etc/skel/.profile.d
             busybox cp /usr/share/minos/skel/.profile.d/shundle.sh /etc/skel/.profile.d/
