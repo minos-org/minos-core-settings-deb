@@ -1,10 +1,40 @@
 #!/bin/sh
 
 . /usr/share/debconf/confmodule
-users="$(busybox cat /etc/passwd | busybox awk -F: '{if ($3 >= 1000 && $3 < 60000) print $1}')"
 
-_get_last_file_version()
-{   #get last version of a bunch of .minos-backup.* files
+package="minos-core-settings"
+users="$(busybox cat /etc/passwd | busybox awk -F: '{if ($3 >= 1000 && $3 < 60000) print $1}')"
+diverge_dir="/usr/share/minos/diverge"
+
+_diverge_element() {
+    _diverge__orig="${1}"
+    _diverge__new="${2}"
+    _diverge__backup="$(printf "%s" "${_diverge__orig}" | sed 's:/:##:g')"
+
+    if ! LC_ALL=C dpkg-divert --list "${package}" | \
+        grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        mkdir -p "${diverge_dir}"
+        dpkg-divert --package "${package}" --add --rename \
+            --divert "${diverge_dir}/${_diverge__backup}" "${_diverge__orig}"
+        ln -s "${_diverge__new}" "${_diverge__orig}"
+    fi
+}
+
+_undiverge_element() {
+    _diverge__orig="${1}"
+    _diverge__new="${2}"
+    _diverge__backup="$(printf "%s" "${_diverge__orig}" | sed 's:/:##:g')"
+
+    if LC_ALL=C dpkg-divert --list "${package}" | \
+        grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        rm -rf "${_diverge__orig}"
+        dpkg-divert --package "${package}" --rename --remove "${_diverge__orig}"
+        rmdir "${diverge_dir}" 2>/dev/null || :
+    fi
+}
+
+_get_last_file_version() {
+   #get last version of a bunch of .minos-backup.* files
     [ -z "${1}" ] && return 1
 
     _getlastversion__files="${1}".minos-backup.*
@@ -31,8 +61,7 @@ _get_last_file_version()
     fi
 }
 
-_replace_file_on_system_users()
-{
+_replace_file_on_system_users() {
     for user in ${users}; do
         su "${user}" -c "test -f ~/.minos/not_override" && continue
 
@@ -53,8 +82,7 @@ _replace_file_on_system_users()
     done
 }
 
-_recover_file_on_system_users()
-{
+_recover_file_on_system_users() {
     for user in ${users}; do
         h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
         su "${user}" -c "test -f ~/.minos/not_override" && continue
@@ -75,8 +103,8 @@ _recover_file_on_system_users()
     done
 }
 
-_ensure_setting_is_set()
-{   #ensure setting($1) is enabled in the configuration file($2)
+_ensure_setting_is_set() {
+    #ensure setting($1) is enabled in configuration file($2)
     # /etc/sysctl.conf
     # /etc/fstab
     [ -z "${1}" ]   && return 1
@@ -99,8 +127,7 @@ _ensure_setting_is_set()
     fi
 }
 
-_suspend_dpkg_process()
-{
+_suspend_dpkg_process() {
     busybox rm -rf /var/lib/dpkg/updates.suspended/
     busybox mv     /var/lib/dpkg/lock           /var/lib/dpkg/lock.suspended
     busybox mv     /var/lib/dpkg/updates/       /var/lib/dpkg/updates.suspended
@@ -111,8 +138,7 @@ _suspend_dpkg_process()
     busybox cp     /var/lib/dpkg/status-orig    /var/lib/dpkg/status
 }
 
-_continue_dpkg_process()
-{
+_continue_dpkg_process() {
     busybox rm -rf /var/lib/dpkg/updates
     busybox mv     /var/lib/dpkg/lock.suspended           /var/lib/dpkg/lock
     busybox mv     /var/lib/dpkg/updates.suspended        /var/lib/dpkg/updates
@@ -121,8 +147,7 @@ _continue_dpkg_process()
     busybox mv     /var/lib/dpkg/status-orig              /var/lib/dpkg/status-old
 }
 
-_add_status_apt_queue()
-{
+_add_status_apt_queue() {
     busybox cp /var/lib/dpkg/status /var/lib/dpkg/status-append
     diff="$(busybox diff -u /var/lib/dpkg/status-orig /var/lib/dpkg/status-append | \
         busybox awk '/^\+/ {if($1 == "+++") {next}; sub(/^\+/,""); print}')"
@@ -137,15 +162,13 @@ _add_status_apt_queue()
     done; unset pkg
 }
 
-_rm_status_apt_queue()
-{
+_rm_status_apt_queue() {
     for pkg; do
         printf "%s\\n" "${pkg}" >> /var/lib/dpkg/status-remove-queue
     done; unset pkg
 }
 
-_append_status_db()
-{
+_append_status_db() {
     [ -f /var/lib/dpkg/status-append-queue ] || return
 
     while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
@@ -161,8 +184,7 @@ _append_status_db()
     busybox rm -rf /var/lib/dpkg/lock-custom
 }
 
-_remove_status_db()
-{
+_remove_status_db() {
     [ -f /var/lib/dpkg/status-remove-queue ] && sleep 0.1 || return
 
     while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
@@ -179,8 +201,7 @@ _remove_status_db()
     busybox rm -rf /var/lib/dpkg/lock-custom
 }
 
-_apt_install()
-{
+_apt_install() {
     [ -z "${1}" ] && return
     _suspend_dpkg_process
     apt-get install --no-install-recommends -y --force-yes ${@} >/dev/null 2>&1 ||
@@ -189,8 +210,7 @@ _apt_install()
     _continue_dpkg_process
 }
 
-_apt_purge()
-{
+_apt_purge() {
     [ -z "${1}" ] && return
     _suspend_dpkg_process
     busybox cat /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
@@ -199,14 +219,12 @@ _apt_purge()
     _continue_dpkg_process
 }
 
-_apt_sync_db()
-{
+_apt_sync_db() {
     _append_status_db &
     _remove_status_db &
 }
 
-_enable_setting()
-{
+_enable_setting() {
     case "${1}" in
         kernel)
             _ensure_setting_is_set "vm.swappiness = 10"      /etc/sysctl.conf
@@ -216,28 +234,39 @@ _enable_setting()
         sudo)
             busybox sed -i "/^#includedir.*\/etc\/sudoers\.d$/d" /etc/sudoers
             busybox sed -i -e "\$ a#includedir /etc/sudoers.d"   /etc/sudoers
-            [ ! -f /etc/sudoers.d/minos-core ] && \
+            if [ ! -f /etc/sudoers.d/minos-core ]; then
                 busybox cp /usr/share/minos/sudoers.d/minos-core /etc/sudoers.d/
+            fi
             ;;
 
-        tmpfs)
-            _ensure_setting_is_set "tmpfs /tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0" /etc/fstab
+        ssh) _diverge_element /etc/ssh/ssh_config /usr/share/minos/ssh/ssh_config ;;
+
+        motd)
+            _diverge_element /etc/issue /usr/share/minos/issue
+            _diverge_element /etc/issue.net /usr/share/minos/issue.net
+            _diverge_element /etc/legal /usr/share/minos/legal
+            _diverge_element /etc/update-motd.d/00-header /usr/share/minos/update-motd.d/00-header
+            _diverge_element /etc/update-motd.d/10-help-text /usr/share/minos/update-motd.d/10-help-text
             ;;
+
+        tmpfs) _ensure_setting_is_set "tmpfs /tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0" /etc/fstab ;;
 
         locales)
             locale-gen en_US en_US.UTF-8 && locale-gen
             #https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794
-            [ ! -f /etc/default/locale ] && printf "%s\\n%s\\n" \
-                'LANG="en_US.UTF-8"' 'LANGUAGE="en_US:en"' > /etc/default/locale
+            if [ ! -f /etc/default/locale ]; then
+                printf "%s\\n%s\\n" 'LANG="en_US.UTF-8"' 'LANGUAGE="en_US:en"' > /etc/default/locale
+            fi
             ;;
 
         minos-bash)
-            [ ! -f /etc/profile.d/minos-bash.sh ] && \
+            if [ ! -f /etc/profile.d/minos-bash.sh ]; then
                 busybox cp /usr/share/minos/profile.d/minos-bash.sh /etc/profile.d/minos-bash.sh
+            fi
             ;;
 
         bash_profile)
-            [ ! -f /etc/skel/.bash_profile ] && busybox cp /usr/share/minos/skel/.bash_profile /etc/skel/
+            [ -f /etc/skel/.bash_profile ] || busybox cp /usr/share/minos/skel/.bash_profile /etc/skel/
             _replace_file_on_system_users '/etc/skel/.bash_profile' '~/.bash_profile'
             ;;
 
@@ -309,10 +338,10 @@ _enable_setting()
                 [ -z "${dotrepo}" ] && continue
 
                 bdotrepo="$(busybox basename "${dotrepo}")"
-                busybox mkdir -p /tmp/minos-core-setting.GTOm0l
-                git clone --depth=1 "${dotrepo}" /tmp/minos-core-setting.GTOm0l/"${bdotrepo}" >/dev/null 2>&1
+                busybox mkdir -p /tmp/minos-core-setting
+                git clone --depth=1 "${dotrepo}" /tmp/minos-core-setting/"${bdotrepo}" >/dev/null 2>&1
 
-                for dotfile in /tmp/minos-core-setting.GTOm0l/"${bdotrepo}"/.*; do
+                for dotfile in /tmp/minos-core-setting/"${bdotrepo}"/.*; do
                     [ ! -e "${dotfile}" ] && continue
                     bdotfile="$(busybox basename "${dotfile}")"
 
@@ -341,7 +370,7 @@ _enable_setting()
                     if [ -n "${old_ssh_conf}" ] && [ ! X"${old_ssh_conf}" = X"${h}"/.ssh ]; then
                         busybox cp -- "${old_ssh_conf}"/* "${h}"/.ssh/
                     fi
-                done; busybox rm -rf /tmp/minos-core-setting.GTOm0l/
+                done; busybox rm -rf /tmp/minos-core-setting/
             done
             ;;
 
@@ -472,8 +501,7 @@ _enable_setting()
     esac
 }
 
-_disable_setting()
-{
+_disable_setting() {
     case "${1}" in
         kernel)
             busybox sed -i "/^vm.swappiness = 10/d"      /etc/sysctl.conf
@@ -481,6 +509,16 @@ _disable_setting()
             ;;
 
         sudo) busybox rm -rf /etc/sudoers.d/minos-core ;;
+
+        ssh) _undiverge_element /etc/ssh/ssh_config /usr/share/minos/ssh/ssh_config ;;
+
+        motd)
+            _undiverge_element /etc/issue /usr/share/minos/issue
+            _undiverge_element /etc/issue.net /usr/share/minos/issue.net
+            _undiverge_element /etc/legal /usr/share/minos/legal
+            _undiverge_element /etc/update-motd.d/00-header /usr/share/minos/update-motd.d/00-header
+            _undiverge_element /etc/update-motd.d/10-help-text /usr/share/minos/update-motd.d/10-help-text
+            ;;
 
         tmpfs)
             busybox sed -i "/^tmpfs \/tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0/d" /etc/fstab
@@ -496,12 +534,12 @@ _disable_setting()
             ;;
 
         app-core)
-            : #should reverse process?
+            : #reverse process?
             ;;
 
         app-purge) : ;;
 
-         dotfiles)
+        dotfiles)
             for user in ${users}; do
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
                 h="$(su "${user}" -c "echo ~" 2>/dev/null)"     || continue
@@ -519,10 +557,10 @@ _disable_setting()
                 [ -z "${dotrepo}" ] && continue
 
                 bdotrepo="$(busybox basename "${dotrepo}")"
-                busybox mkdir -p /tmp/minos-core-setting.GTOm0l
-                git clone --depth=1  "${dotrepo}" /tmp/minos-core-setting.GTOm0l/"${bdotrepo}"   >/dev/null 2>&1
+                busybox mkdir -p /tmp/minos-core-settings
+                git clone --depth=1  "${dotrepo}" /tmp/minos-core-settings/"${bdotrepo}"   >/dev/null 2>&1
 
-                for dotfile in  /tmp/minos-core-setting.GTOm0l/"${bdotrepo}"/.*; do
+                for dotfile in  /tmp/minos-core-settings/"${bdotrepo}"/.*; do
                     [ ! -e "${dotfile}" ] && continue
                     bdotfile="$(busybox basename "${dotfile}")"
 
@@ -536,7 +574,7 @@ _disable_setting()
                         _recover_file_on_system_users "${bdotfile}"
                     fi
 
-                done; busybox rm -rf /tmp/minos-core-setting.GTOm0l/
+                done; busybox rm -rf /tmp/minos-core-settings/
             done
             ;;
 
@@ -569,7 +607,7 @@ _disable_setting()
 
 case "${1}" in
     configure)
-        #get settings from user
+        #get user settings
         db_get minos-core-settings/settings
         settings="${RET}"
 
@@ -582,17 +620,16 @@ case "${1}" in
             setting="${setting%,*}" #remove ',' from tail
             _enable_setting "${setting}"
 
-            #get not selected items by removing items from the list
-            default_settings="$(printf "%s" "${default_settings}" | busybox sed 's:'"${setting}"'[, ]*::')"
+            not_selected_settings="$(printf "%s" "${default_settings}" | busybox sed 's:'"${setting}"'[, ]*::')"
         done
 
         #disable not selected items
-        for not_selected_setting in ${default_settings}; do
+        for not_selected_setting in ${not_selected_settings}; do
             not_selected_setting="${not_selected_setting%,*}" #remove ',' from tail
             _disable_setting "${not_selected_setting}"
         done
 
-        #update manually apt/dpkg db in case any package was installed on this iteration
+        #update apt/dpkg db in case any package was installed on this iteration
         _apt_sync_db
         ;;
     abort-upgrade|abort-deconfigure|abort-remove)

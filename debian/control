@@ -11,23 +11,27 @@ Vcs-Browser: https://github.com/minos-org/minos-core-settings-deb.git
 Package: minos-core-settings
 Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, debconf, login, busybox-static
-#                                                     login => because of /bin/su
+#                                               login => because of /bin/su
 Recommends: git, wget, bash-minos-settings, minos-tools-extra
 Description: Minos core settings
  This package provides the minimal settings which gives to minos its identity.
- It's intend to be installed in all environments, even environments where X
- is not running.
+ It's intend to be installed in all environments, even on those where X is not
+ running.
  .
  Settings are organized in modules which can be enabled/disabled by system
  administrators:
  .
     - kernel: change swappiness for better general performance, ignore most
-              kernel warnings
+        kernel warnings
         * /etc/sysctl.conf
  .
     - sudo: turn on sudo insults, set a longer (1hr) timeout, define group
-            session and bypass passwords authentication for hibernate/shutdown.
-        * /etc/sudoers.d/minos
+        session and bypass passwords authentication for hibernate/shutdown.
+        * /etc/sudoers.d/minos-core
+ .
+    - ssh: connection sharing, better performance and general resiliance to
+        network failures
+        * /etc/ssh/ssh_config
  .
     - tmpfs: mount /tmp as tmpfs in RAM
         * /etc/fstab
@@ -40,46 +44,52 @@ Description: Minos core settings
         * /etc/profile.d/minos-bash.sh
  .
     - bash_profile: add local gpg-agent and tmux autolaunchers on incomming
-                    ssh connection.
+        ssh connection.
         * /etc/skel/.bash_profile
         * $HOME/.bash_profile
  .
+    - motd: modify message of the day and other personality files.
+        * /etc/issue
+        * /etc/issue.net
+        * /etc/legal
+        * /etc/update-motd.d/00-header
+        * /etc/update-motd.d/10-help-text
+ .
     - app-core: install additional apt packages (Experimental)
-                Eg, ~/.minos/config
-                app-core emacs aria2 curl
+        Eg, $ grep app-core ~/.minos/config
+            app-core emacs aria2 curl
  .
     - app-purge: remove apt packages (Experimental)
-                 Eg, ~/.minos/config
-                 app-purge xinetd sasl2-bin sendmail sendmail-base
+        Eg, $ grep app-purge ~/.minos/config
+            app-purge xinetd sasl2-bin sendmail sendmail-base
  .
     - dotfiles: install remote dotfiles on every user home directory.
-                Eg, ~/.minos/config:
-                dotfiles https://github.com/user/dotfiles
+        Eg, $ grep dotfiles ~/.minos/config
+            dotfiles https://github.com/user/dotfiles
  .
     - aliases: replace cd, rm and other system applications with minos
-               wrappers.
+        wrappers.
         * /etc/skel/.aliases
  .
     - vim: setup vim with vundle, a modern plugin manager
-        * https://github.com/chilicuil/vundle
         * /etc/skel/.vimrc
         * $HOME/.vimrc
+        * https://github.com/chilicuil/vundle
  .
     - tmux: setup with tundle, a modern plugin manager
-        * https://github.com/chilicuil/tundle
         * /etc/skel/.tmux.conf
         * $HOME/.tmux.conf
+        * https://github.com/chilicuil/tundle
  .
     - shundle: setup the interactive shell with shundle, a modern plugin manager
-        * https://github.com/chilicuil/shundle
         * /etc/skel/.profile.d/shundle.sh
         * $HOME/.shundle/
+        * https://github.com/chilicuil/shundle
  .
     - hooks: execute a hook script for every user. The script is called with
-             a 'core' parameter and runs as root when defined in
-             /etc/minos/config, otherwise runs as $user for every user who
-             had define it in ~/.minos/config.
-             Eg, ~/.minos/config:
+        a 'core' parameter and runs as root when defined in /etc/minos/config,
+        otherwise runs as $user for every user who had define it in
+        ~/.minos/config. Eg, $ grep hook ~/.minos/config
              hook http://domain.tld/hook
  .
  If a $HOME/.minos/not_override file exists modules will not alter files on

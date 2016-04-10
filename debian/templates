@@ -1,7 +1,7 @@
 Template: minos-core-settings/settings
 Type: multiselect
-Choices: kernel, sudo, tmpfs, locales, minos-bash, bash_profile, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
-Default: kernel, sudo, tmpfs, locales, minos-bash, bash_profile, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Choices: kernel, sudo, ssh, tmpfs, locales, minos-bash, bash_profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Default: kernel, sudo, ssh, tmpfs, locales, minos-bash, bash_profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
 Description: Select the settings to be applied.
  Minos default behavor requires additional settings to fullfill the minos
  experience, all add-ons can be enabled or disabled by marking the
@@ -16,6 +16,11 @@ Description: Select the settings to be applied.
  and bypass passwords authentication for hibernate/shutdown (Required)
  .
     - /etc/sudoers.d/minos
+ .
+ ssh: connection sharing, better performance and general resiliance to network
+ failures (Recommended)
+ .
+    - /etc/ssh/ssh_config
  .
  tmpfs: mount /tmp as tmpfs in RAM (Recommended)
  .
@@ -34,6 +39,14 @@ Description: Select the settings to be applied.
  connection (Recommended)
  .
     - /etc/skel/.bash_profile
+ .
+ motd: modify message of the day and other personality files.
+ .
+    - /etc/issue
+    - /etc/issue.net
+    - /etc/legal
+    - /etc/update-motd.d/00-header
+    - /etc/update-motd.d/10-help-text
  .
  app-core: install additional apt packages (Experimental)
   Eg, ~/.minos/config
