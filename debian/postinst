@@ -47,6 +47,8 @@ _get_last_file_version() {
     if [ "${_getlastversion__counter}" -eq "1" ]; then
         if [ -e "${_getlastversion__file}" ]; then
             printf "%s" "${_getlastversion__file}"
+        elif [ -e "${1}" ]; then
+            printf "%s" "${1}"
         fi
     else
         _getlastversion__newer="${_getlastversion__file}"
@@ -339,7 +341,7 @@ _enable_setting() {
 
                 bdotrepo="$(busybox basename "${dotrepo}")"
                 busybox mkdir -p /tmp/minos-core-setting
-                git clone --depth=1 "${dotrepo}" /tmp/minos-core-setting/"${bdotrepo}" >/dev/null 2>&1
+                git clone --depth=1 "${dotrepo}" /tmp/minos-core-setting/"${bdotrepo}" >/dev/null
 
                 for dotfile in /tmp/minos-core-setting/"${bdotrepo}"/.*; do
                     [ ! -e "${dotfile}" ] && continue
@@ -380,67 +382,61 @@ _enable_setting() {
             ;;
 
         vim)
+            busybox cp -rL /usr/share/minos/skel/.vimrc /etc/skel/.vimrc
+            _replace_file_on_system_users '/etc/skel/.vimrc' '~/.vimrc'
+
             if [ -d /usr/share/minos/skel/.vim/bundle/vundle/.git/ ]; then
                 (cd /usr/share/minos/skel/.vim/bundle/vundle && git pull) >/dev/null 2>&1
             else
                 busybox rm -rf /usr/share/minos/skel/.vim/bundle/vundle
                 #git clone --depth=1 "https://github.com/chilicuil/vundle" \
                 git clone --depth=1 https://git::@github.com/chilicuil/vundle.git
-                    "/usr/share/minos/skel/.vim/bundle/vundle" >/dev/null 2>&1
+                    "/usr/share/minos/skel/.vim/bundle/vundle" >/dev/null
             fi
 
-            busybox rm -rf   /etc/skel/.vim/bundle/vundle
-            busybox mkdir -p /etc/skel/.vim/bundle
-            busybox cp -rL   /usr/share/minos/skel/.vim/bundle/vundle /etc/skel/.vim/bundle/
-            busybox cp -rL   /usr/share/minos/skel/.vimrc /etc/skel/.vimrc
-            _replace_file_on_system_users '/etc/skel/.vimrc' '~/.vimrc'
+            if [ -d /usr/share/minos/skel/.vim/bundle/vundle/.git/ ]; then
+                busybox rm -rf   /etc/skel/.vim/bundle/vundle
+                busybox mkdir -p /etc/skel/.vim/bundle
+                busybox cp -rL   /usr/share/minos/skel/.vim/bundle/vundle /etc/skel/.vim/bundle/
 
-            for user in ${users}; do
-                su "${user}" -c "test -f ~/.minos/not_override" && continue
-                su "${user}" -c "busybox mkdir -p ~/.vim/bundle/" > /dev/null 2>&1
-                su "${user}" -c "test -d ~/.vim/bundle/vundle/" || \
-                    su "${user}" -c "busybox cp -rL /etc/skel/.vim/bundle/vundle ~/.vim/bundle/vundle"
-                su "${user}" -c "vim -es -u ~/.vimrc -c \"BundleInstall\" -c qa" >/dev/null 2>&1
-                #su "${user}" -c "vim +BundleInstall +qall" >/dev/null 2>&1
-            done
+                for user in ${users}; do
+                    su "${user}" -c "test -f ~/.minos/not_override" && continue
+                    su "${user}" -c "busybox mkdir -p ~/.vim/bundle/"
+                    su "${user}" -c "test -d ~/.vim/bundle/vundle/" || \
+                        su "${user}" -c "busybox cp -rL /etc/skel/.vim/bundle/vundle ~/.vim/bundle/vundle"
+                    su "${user}" -c "vim -es -u ~/.vimrc -c \"BundleInstall\" -c qa" >/dev/null 2>&1
+                    #su "${user}" -c "vim +BundleInstall +qall" >/dev/null 2>&1
+                done
+            fi
             ;;
 
         tmux)
+            busybox cp -rL /usr/share/minos/skel/.tmux.conf /etc/skel/.tmux.conf
+            _replace_file_on_system_users '/etc/skel/.tmux.conf' '~/.tmux.conf'
+
             if [ -d /usr/share/minos/skel/.tmux/plugins/tundle/.git/ ]; then
                 (cd /usr/share/minos/skel/.tmux/plugins/tundle && git pull) >/dev/null 2>&1
             else
                 busybox rm -rf /usr/share/minos/skel/.tmux/plugins/tundle
                 git clone --depth=1 "https://github.com/chilicuil/tundle" \
-                    "/usr/share/minos/skel/.tmux/plugins/tundle" >/dev/null 2>&1
+                    "/usr/share/minos/skel/.tmux/plugins/tundle" >/dev/null
             fi
 
-            busybox rm -rf   /etc/skel/.tmux/plugins/tundle
-            busybox mkdir -p /etc/skel/.tmux/plugins
-            busybox cp -rL   /usr/share/minos/skel/.tmux/plugins/tundle /etc/skel/.tmux/plugins/
-            busybox cp -rL   /usr/share/minos/skel/.tmux.conf /etc/skel/.tmux.conf
-
-            _replace_file_on_system_users '/etc/skel/.tmux.conf' '~/.tmux.conf'
-            for user in ${users}; do
-                su "${user}" -c "test -f ~/.minos/not_override" && continue
-                su "${user}" -c "busybox mkdir -p ~/.tmux/plugins/" > /dev/null 2>&1
-                su "${user}" -c "test -d ~/.tmux/plugins/tundle/" || \
-                    su "${user}" -c "busybox cp -rL /etc/skel/.tmux/plugins/tundle ~/.tmux/plugins/tundle"
-                su "${user}" -c "sh ~/.tmux/plugins/tundle/scripts/install_plugins.sh" >/dev/null 2>&1
-            done
+            if [ -d /usr/share/minos/skel/.tmux/plugins/tundle/.git/ ]; then
+                busybox rm -rf   /etc/skel/.tmux/plugins/tundle
+                busybox mkdir -p /etc/skel/.tmux/plugins
+                busybox cp -rL   /usr/share/minos/skel/.tmux/plugins/tundle /etc/skel/.tmux/plugins/
+                for user in ${users}; do
+                    su "${user}" -c "test -f ~/.minos/not_override" && continue
+                    su "${user}" -c "busybox mkdir -p ~/.tmux/plugins/" > /dev/null 2>&1
+                    su "${user}" -c "test -d ~/.tmux/plugins/tundle/" || \
+                        su "${user}" -c "busybox cp -rL /etc/skel/.tmux/plugins/tundle ~/.tmux/plugins/tundle"
+                    su "${user}" -c "sh ~/.tmux/plugins/tundle/scripts/install_plugins.sh" >/dev/null 2>&1
+                done
+            fi
             ;;
 
         shundle)
-            if [ -d /usr/share/minos/skel/.shundle/bundle/shundle/.git/ ]; then
-                (cd /usr/share/minos/skel/.shundle/bundle/shundle && git pull) > /dev/null 2>&1
-            else
-                busybox rm -rf /usr/share/minos/skel/.shundle
-                git clone --depth=1 "https://github.com/chilicuil/shundle" \
-                    "/usr/share/minos/skel/.shundle/bundle/shundle" >/dev/null 2>&1
-            fi
-
-            busybox rm -rf /etc/skel/.shundle
-            busybox cp -rL /usr/share/minos/skel/.shundle/ /etc/skel/.shundle
-
             busybox mkdir -p /etc/skel/.profile.d
             busybox cp /usr/share/minos/skel/.profile.d/shundle.sh /etc/skel/.profile.d/
 
@@ -448,17 +444,29 @@ _enable_setting() {
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
                 su "${user}" -c "busybox mkdir ~/.profile.d" >/dev/null 2>&1
             done
-
-            _replace_file_on_system_users '/etc/skel/.shundle' '~/.shundle'
             _replace_file_on_system_users '/etc/skel/.profile.d/shundle.sh' '~/.profile.d/shundle.sh'
 
-            for user in ${users}; do
-                su "${user}" -c "test -f ~/.minos/not_override" && continue
-                su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.bashrc \
-                ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
-                su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.profile.d/shundle.sh \
-                ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
-            done
+            if [ -d /usr/share/minos/skel/.shundle/bundle/shundle/.git/ ]; then
+                (cd /usr/share/minos/skel/.shundle/bundle/shundle && git pull) > /dev/null 2>&1
+            else
+                busybox rm -rf /usr/share/minos/skel/.shundle
+                git clone --depth=1 "https://github.com/chilicuil/shundle" \
+                    "/usr/share/minos/skel/.shundle/bundle/shundle" >/dev/null
+            fi
+
+            if [ -d /usr/share/minos/skel/.shundle/bundle/shundle/.git/ ]; then
+                busybox rm -rf /etc/skel/.shundle
+                busybox cp -rL /usr/share/minos/skel/.shundle/ /etc/skel/.shundle
+                _replace_file_on_system_users '/etc/skel/.shundle' '~/.shundle'
+
+                for user in ${users}; do
+                    su "${user}" -c "test -f ~/.minos/not_override" && continue
+                    su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.bashrc \
+                        ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
+                    su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.profile.d/shundle.sh \
+                        ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
+                done
+            fi
             ;;
 
         hooks)
@@ -558,7 +566,7 @@ _disable_setting() {
 
                 bdotrepo="$(busybox basename "${dotrepo}")"
                 busybox mkdir -p /tmp/minos-core-settings
-                git clone --depth=1  "${dotrepo}" /tmp/minos-core-settings/"${bdotrepo}"   >/dev/null 2>&1
+                git clone --depth=1  "${dotrepo}" /tmp/minos-core-settings/"${bdotrepo}" >/dev/null
 
                 for dotfile in  /tmp/minos-core-settings/"${bdotrepo}"/.*; do
                     [ ! -e "${dotfile}" ] && continue
@@ -620,11 +628,11 @@ case "${1}" in
             setting="${setting%,*}" #remove ',' from tail
             _enable_setting "${setting}"
 
-            not_selected_settings="$(printf "%s" "${default_settings}" | busybox sed 's:'"${setting}"'[, ]*::')"
+            default_settings="$(printf "%s" "${default_settings}" | busybox sed 's:'"${setting}"'[, ]*::')"
         done
 
         #disable not selected items
-        for not_selected_setting in ${not_selected_settings}; do
+        for not_selected_setting in ${default_settings}; do
             not_selected_setting="${not_selected_setting%,*}" #remove ',' from tail
             _disable_setting "${not_selected_setting}"
         done
