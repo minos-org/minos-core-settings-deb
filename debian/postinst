@@ -249,6 +249,7 @@ _enable_setting() {
             _diverge_element /etc/legal /usr/share/minos/legal
             _diverge_element /etc/update-motd.d/00-header /usr/share/minos/update-motd.d/00-header
             _diverge_element /etc/update-motd.d/10-help-text /usr/share/minos/update-motd.d/10-help-text
+            ln -s /etc/update-motd.d/10-minos-sysinfo /usr/share/minos/update-motd.d/10-minos-sysinfo
             ;;
 
         tmpfs) _ensure_setting_is_set "tmpfs /tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0" /etc/fstab ;;
@@ -526,6 +527,7 @@ _disable_setting() {
             _undiverge_element /etc/legal /usr/share/minos/legal
             _undiverge_element /etc/update-motd.d/00-header /usr/share/minos/update-motd.d/00-header
             _undiverge_element /etc/update-motd.d/10-help-text /usr/share/minos/update-motd.d/10-help-text
+            rm -rf /etc/update-motd.d/10-minos-sysinfo
             ;;
 
         tmpfs)
