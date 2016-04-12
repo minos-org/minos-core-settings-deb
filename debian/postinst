@@ -249,7 +249,7 @@ _enable_setting() {
             _diverge_element /etc/legal /usr/share/minos/legal
             _diverge_element /etc/update-motd.d/00-header /usr/share/minos/update-motd.d/00-header
             _diverge_element /etc/update-motd.d/10-help-text /usr/share/minos/update-motd.d/10-help-text
-            ln -s /etc/update-motd.d/10-minos-sysinfo /usr/share/minos/update-motd.d/10-minos-sysinfo
+            ln -s /usr/share/minos/update-motd.d/10-minos-sysinfo /etc/update-motd.d/10-minos-sysinfo
             ;;
 
         tmpfs) _ensure_setting_is_set "tmpfs /tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0" /etc/fstab ;;
@@ -391,7 +391,7 @@ _enable_setting() {
             else
                 busybox rm -rf /usr/share/minos/skel/.vim/bundle/vundle
                 #git clone --depth=1 "https://github.com/chilicuil/vundle" \
-                git clone --depth=1 https://git::@github.com/chilicuil/vundle.git
+                git clone --depth=1 https://git::@github.com/chilicuil/vundle.git \
                     "/usr/share/minos/skel/.vim/bundle/vundle" >/dev/null
             fi
 
