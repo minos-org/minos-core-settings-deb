@@ -25,6 +25,9 @@ Description: Minos core settings
         kernel warnings
         * /etc/sysctl.conf
  .
+    - git: git aliases and default theme
+        * /etc/gitconfig
+ .
     - apt: disable recommends/suggest packages
         * /etc/apt/apt.conf.d/05disable-recommends
         * /etc/apt/apt.conf.d/05disable-suggests

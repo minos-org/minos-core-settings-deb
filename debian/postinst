@@ -251,6 +251,8 @@ _enable_setting() {
 
         ssh) _diverge_element /etc/ssh/ssh_config /usr/share/minos/ssh/ssh_config ;;
 
+        git) _diverge_element /usr/share/minos/gitconfig /etc/gitconfig ;;
+
         motd)
             _diverge_element /etc/issue /usr/share/minos/issue
             _diverge_element /etc/issue.net /usr/share/minos/issue.net
@@ -533,6 +535,8 @@ _disable_setting() {
         sudo) busybox rm -rf /etc/sudoers.d/minos-core ;;
 
         ssh) _undiverge_element /etc/ssh/ssh_config /usr/share/minos/ssh/ssh_config ;;
+
+        git) _undiverge_element /usr/share/minos/gitconfig /etc/gitconfig ;;
 
         motd)
             _undiverge_element /etc/issue /usr/share/minos/issue

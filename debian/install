@@ -9,6 +9,7 @@ etc##skel##.tmux.conf                 => /usr/share/minos/skel/.tmux.conf
 etc##skel##.profile.d##shundle.sh     => /usr/share/minos/skel/.profile.d/shundle.sh
 
 etc##ssh##ssh_config                  => /usr/share/minos/ssh/ssh_config
+etc##gitconfig                        => /usr/share/minos/gitconfig
 
 etc##issue                            => /usr/share/minos/issue
 etc##issue.net                        => /usr/share/minos/issue.net
@@ -19,3 +20,4 @@ etc##update-motd.d##10-minos-sysinfo  => /usr/share/minos/update-motd.d/10-minos
 
 etc##apt##apt.conf.d##05disable-recommends => /usr/share/minos/apt.conf.d/05disable-recommends
 etc##apt##apt.conf.d##05disable-suggests   => /usr/share/minos/apt.conf.d/05disable-suggests
+
