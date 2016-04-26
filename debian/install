@@ -16,3 +16,6 @@ etc##legal                            => /usr/share/minos/legal
 etc##update-motd.d##00-header         => /usr/share/minos/update-motd.d/00-header
 etc##update-motd.d##10-help-text      => /usr/share/minos/update-motd.d/10-help-text
 etc##update-motd.d##10-minos-sysinfo  => /usr/share/minos/update-motd.d/10-minos-sysinfo
+
+etc##apt##apt.conf.d##05disable-recommends => /usr/share/minos/apt.conf.d/05disable-recommends
+etc##apt##apt.conf.d##05disable-suggests   => /usr/share/minos/apt.conf.d/05disable-suggests

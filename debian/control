@@ -25,6 +25,10 @@ Description: Minos core settings
         kernel warnings
         * /etc/sysctl.conf
  .
+    - apt: disable recommends/suggest packages
+        * /etc/apt/apt.conf.d/05disable-recommends
+        * /etc/apt/apt.conf.d/05disable-suggests
+ .
     - sudo: turn on sudo insults, set a longer (1hr) timeout, define group
         session and bypass passwords authentication for hibernate/shutdown.
         * /etc/sudoers.d/minos-core

@@ -233,6 +233,14 @@ _enable_setting() {
             _ensure_setting_is_set "kernel.printk = 4 4 1 7" /etc/sysctl.conf
             ;;
 
+        apt)
+            apt-config dump | grep '^APT::Install-Recommends "false";$' || \
+                cp /usr/share/minos/apt.conf.d/05disable-recommends /etc/apt/apt.conf.d/05disable-recommends
+
+            apt-config dump | grep '^APT::Install-Suggests "false";$' || \
+                cp /usr/share/minos/apt.conf.d/05disable-suggests /etc/apt/apt.conf.d/05disable-suggests
+            ;;
+
         sudo)
             busybox sed -i "/^#includedir.*\/etc\/sudoers\.d$/d" /etc/sudoers
             busybox sed -i -e "\$ a#includedir /etc/sudoers.d"   /etc/sudoers
@@ -515,6 +523,11 @@ _disable_setting() {
         kernel)
             busybox sed -i "/^vm.swappiness = 10/d"      /etc/sysctl.conf
             busybox sed -i "/^kernel.printk = 4 4 1 7/d" /etc/sysctl.conf
+            ;;
+
+        apt)
+            rm -rf /etc/apt/apt.conf.d/05disable-recommends
+            rm -rf /etc/apt/apt.conf.d/05disable-suggests
             ;;
 
         sudo) busybox rm -rf /etc/sudoers.d/minos-core ;;

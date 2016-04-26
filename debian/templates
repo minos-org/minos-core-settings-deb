@@ -1,7 +1,7 @@
 Template: minos-core-settings/settings
 Type: multiselect
-Choices: kernel, sudo, ssh, tmpfs, locales, minos-bash, bash_profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
-Default: kernel, sudo, ssh, tmpfs, locales, minos-bash, bash_profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Choices: kernel, apt, sudo, ssh, tmpfs, locales, minos-bash, bash_profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Default: kernel, apt, sudo, ssh, tmpfs, locales, minos-bash, bash_profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
 Description: Select the settings to be applied.
  Minos default behavor requires additional settings to fullfill the minos
  experience, all add-ons can be enabled or disabled by marking the
@@ -11,6 +11,11 @@ Description: Select the settings to be applied.
  warnings (Optional)
  .
     - /etc/sysctl.conf
+ .
+ apt: disable recommends/suggest packages (Optional)
+ .
+    - etc/apt/apt.conf.d/05disable-recommends
+    - etc/apt/apt.conf.d/05disable-suggests
  .
  sudo: turn on sudo insults, set a longer (1hr) timeout, define group session
  and bypass passwords authentication for hibernate/shutdown (Required)
