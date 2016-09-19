@@ -7,8 +7,9 @@ Description: Select the settings to be applied.
  experience, all add-ons can be enabled or disabled by marking the
  following list
  .
- sudo: turn on sudo insults, set a longer (1hr) timeout, define group session
- and bypass passwords authentication for hibernate/shutdown (Required)
+ sudo: turn on sudo insults, disable tty tickets, set a longer (1hr) timeout,
+ define group session to bypass passwords authentication for hibernate/shutdown
+ (Recommended)
  .
     - /etc/sudoers.d/minos
  .
@@ -84,7 +85,8 @@ Description: Select the settings to be applied.
     - https://github.com/chilicuil/tundle
     - $HOME/.tmux.conf
  .
- shundle: setup the interactive shell with shundle, a modern plugin manager. (Optional)
+ shundle: setup the interactive shell with shundle, a modern plugin manager.
+ (Optional)
  .
     - https://github.com/chilicuil/shundle
     - /etc/skel/.profile.d/shundle.sh
