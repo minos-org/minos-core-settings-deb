@@ -170,13 +170,23 @@ _rm_status_apt_queue() {
     done; unset pkg
 }
 
+_abusing_apt_get() {
+    #dpkg-reconfigure
+    if busybox ps -o comm,pid  | busybox grep dpkg-reconf >/dev/null 2>&1; then
+        busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1
+    else #apt-get
+        [ "$(busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1 | \
+               busybox wc -l)" -gt "1" ]
+    fi
+}
+
 _append_status_db() {
     [ -f /var/lib/dpkg/status-append-queue ] || return
 
     while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
     busybox touch /var/lib/dpkg/lock-custom
 
-    while busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1; do
+    while _abusing_apt_get; do
         sleep 0.1
     done
 
@@ -192,7 +202,8 @@ _remove_status_db() {
     while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
     busybox touch /var/lib/dpkg/lock-custom
 
-    while busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1; do
+    #ubuntu xenial 16.04
+    while _abusing_apt_get; do
         sleep 0.1
     done
 
@@ -205,19 +216,22 @@ _remove_status_db() {
 
 _apt_install() {
     [ -z "${1}" ] && return
+    pkgs="$(printf "%s\\n" "${@}" | busybox sed "s:minos-core-settings::g")"
     _suspend_dpkg_process
-    apt-get install --no-install-recommends -y --force-yes ${@} >/dev/null 2>&1 ||
-        apt-get install --no-install-recommends -y --force-yes ${@}
-    _add_status_apt_queue ${@}
+    apt-get install --no-install-recommends -y --force-yes ${pkgs} >/dev/null 2>&1 ||
+        apt-get install --no-install-recommends -y --force-yes ${pkgs} >> /tmp/minos-core-settings.debug 2>&1
+    _add_status_apt_queue ${pkgs}
     _continue_dpkg_process
 }
 
 _apt_purge() {
     [ -z "${1}" ] && return
+    pkgs="$(printf "%s\\n" "${@}" | busybox sed "s:minos-core-settings::g")"
     _suspend_dpkg_process
     busybox cat /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
-    apt-get purge -y     ${@} >/dev/null 2>&1 || apt-get purge -y ${@}
-    _rm_status_apt_queue ${@}
+    apt-get purge -y     ${pkgs} >  /dev/null 2>&1 || \
+        apt-get purge -y ${pkgs} >> /tmp/minos-core-settings.debug 2>&1
+    _rm_status_apt_queue ${pkgs}
     _continue_dpkg_process
 }
 
@@ -259,7 +273,8 @@ _enable_setting() {
             _diverge_element /etc/legal /usr/share/minos/legal
             _diverge_element /etc/update-motd.d/00-header /usr/share/minos/update-motd.d/00-header
             _diverge_element /etc/update-motd.d/10-help-text /usr/share/minos/update-motd.d/10-help-text
-            ln -s /usr/share/minos/update-motd.d/10-minos-sysinfo /etc/update-motd.d/10-minos-sysinfo
+            [ -f /etc/update-motd.d/10-minos-sysinfo ] || \
+                ln -s /usr/share/minos/update-motd.d/10-minos-sysinfo /etc/update-motd.d/10-minos-sysinfo
             ;;
 
         tmpfs) _ensure_setting_is_set "tmpfs /tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0" /etc/fstab ;;
@@ -313,7 +328,7 @@ _enable_setting() {
                 su "${user}" -c "busybox id | busybox grep '(sudo)\|(admin)\|(wheel)'" >/dev/null 2>&1 || continue
                 h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
 
-                rm_userpkgs="$(busybox awk -v pattern="^app-core"    \
+                rm_userpkgs="$(busybox awk -v pattern="^app-purge"   \
                     '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
                     "${h}"/.minos/config 2>/dev/null)"
 
@@ -323,7 +338,7 @@ _enable_setting() {
                 _apt_purge ${rm_userpkgs}
             done
 
-            rm_globalpkgs="$(busybox awk -v pattern="^app-core"      \
+            rm_globalpkgs="$(busybox awk -v pattern="^app-purge"     \
                     '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
                      /etc/minos/config 2>/dev/null)"
 
