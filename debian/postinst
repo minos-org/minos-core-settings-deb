@@ -2,6 +2,16 @@
 
 . /usr/share/debconf/confmodule
 
+#close stdout
+exec 1<&-
+#close stderr
+exec 2<&-
+#open stdout as $log_file file for read and write.
+exec 1<> /tmp/minos-core-settings."${$}".debug
+#redirect stderr to stdout
+exec 2>&1
+set -x #enable trace mode
+
 package="minos-core-settings"
 users="$(busybox cat /etc/passwd | busybox awk -F: '{if ($3 >= 1000 && $3 < 60000) print $1}')"
 diverge_dir="/usr/share/minos/diverge"
@@ -130,51 +140,63 @@ _ensure_setting_is_set() {
 }
 
 _suspend_dpkg_process() {
-    busybox rm -rf /var/lib/dpkg/updates.suspended/
+    #unlock standard files
     busybox mv     /var/lib/dpkg/lock           /var/lib/dpkg/lock.suspended
+    busybox rm -rf /var/lib/dpkg/updates.suspended/
     busybox mv     /var/lib/dpkg/updates/       /var/lib/dpkg/updates.suspended
     busybox mkdir  /var/lib/dpkg/updates/
     busybox mv     /var/cache/apt/archives/lock /var/cache/apt/archives/lock.suspended
+
+    #while apt is being executed it modifies the status file which brings conflicts
+    #to new packages if they're installed/removed in abused apt instances, therefore
+    #the status-old file (which represent the original state in which the first
+    #apt instance was launched) is used to create temporal diffs which will be merged
+    #at the end
     busybox cp     /var/lib/dpkg/status         /var/lib/dpkg/status.suspended
     busybox cp     /var/lib/dpkg/status-old     /var/lib/dpkg/status-orig
     busybox cp     /var/lib/dpkg/status-orig    /var/lib/dpkg/status
 }
 
 _continue_dpkg_process() {
+    #relock standard files
     busybox rm -rf /var/lib/dpkg/updates
     busybox mv     /var/lib/dpkg/lock.suspended           /var/lib/dpkg/lock
     busybox mv     /var/lib/dpkg/updates.suspended        /var/lib/dpkg/updates
     busybox mv     /var/cache/apt/archives/lock.suspended /var/cache/apt/archives/lock
     busybox mv     /var/lib/dpkg/status.suspended         /var/lib/dpkg/status
+    #keep status-old file to survive multiple abused apt instances
     busybox mv     /var/lib/dpkg/status-orig              /var/lib/dpkg/status-old
 }
 
 _add_status_apt_queue() {
-    busybox cp /var/lib/dpkg/status /var/lib/dpkg/status-append
-    diff="$(busybox diff -u /var/lib/dpkg/status-orig /var/lib/dpkg/status-append | \
-        busybox awk '/^\+/ {if($1 == "+++") {next}; sub(/^\+/,""); print}')"
+    diff="$(busybox diff -u /var/lib/dpkg/status-orig /var/lib/dpkg/status | \
+            busybox awk '/^\+/ {if($1 == "+++") {next}; sub(/^\+/,""); print}')"
 
-    #it's important to add and additional \\n at the end to ensure the
-    #format doesn't get weird after several invocations
+    #add pkg to the append queue
+    #keeping an additional \\n at the end ensures the format doesn't get weird
+    #after several invocations
     [ -z "${diff}" ] || printf "%s\\n\\n" "${diff}" >> /var/lib/dpkg/status-append-queue
+    unset diff
 
-    for pkg; do
+    for pkg in "${@}"; do
+        #remove pkg from the remove queue
         [ -f /var/lib/dpkg/status-remove-queue ] || continue
         busybox sed -i '/^'"${pkg}"'$/d' /var/lib/dpkg/status-remove-queue
     done; unset pkg
 }
 
 _rm_status_apt_queue() {
-    for pkg; do
+    #add pkg to the remove queue
+    for pkg in "${@}"; do
         printf "%s\\n" "${pkg}" >> /var/lib/dpkg/status-remove-queue
     done; unset pkg
 }
 
 _abusing_apt_get() {
-    #dpkg-reconfigure
+    #this script could be invoked from dpkg-reconfigure
     if busybox ps -o comm,pid  | busybox grep dpkg-reconf >/dev/null 2>&1; then
         busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1
-    else #apt-get
+    else #or a full apt-get instance
         [ "$(busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1 | \
                busybox wc -l)" -gt "1" ]
     fi
@@ -191,8 +213,7 @@ _append_status_db() {
     done
 
     busybox cat    /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
-    busybox rm -rf /var/lib/dpkg/status-append-queue /var/lib/dpkg/status-append
-
+    busybox rm -rf /var/lib/dpkg/status-append-queue
     busybox rm -rf /var/lib/dpkg/lock-custom
 }
 
@@ -202,15 +223,14 @@ _remove_status_db() {
     while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
     busybox touch /var/lib/dpkg/lock-custom
 
-    #ubuntu xenial 16.04
     while _abusing_apt_get; do
         sleep 0.1
     done
 
     for pkg in $(cat /var/lib/dpkg/status-remove-queue); do
         busybox sed -i '/Package: '"${pkg}"'$/,/^$/d' /var/lib/dpkg/status
-    done; busybox rm -rf /var/lib/dpkg/status-remove-queue
-
+    done
+    busybox rm -rf /var/lib/dpkg/status-remove-queue
     busybox rm -rf /var/lib/dpkg/lock-custom
 }
 
@@ -219,7 +239,7 @@ _apt_install() {
     pkgs="$(printf "%s\\n" "${@}" | busybox sed "s:minos-core-settings::g")"
     _suspend_dpkg_process
     apt-get install --no-install-recommends -y --force-yes ${pkgs} >/dev/null 2>&1 ||
-        apt-get install --no-install-recommends -y --force-yes ${pkgs} >> /tmp/minos-core-settings.debug 2>&1
+        apt-get install --no-install-recommends -y --force-yes ${pkgs}
     _add_status_apt_queue ${pkgs}
     _continue_dpkg_process
 }
@@ -228,9 +248,11 @@ _apt_purge() {
     [ -z "${1}" ] && return
     pkgs="$(printf "%s\\n" "${@}" | busybox sed "s:minos-core-settings::g")"
     _suspend_dpkg_process
-    busybox cat /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
-    apt-get purge -y     ${pkgs} >  /dev/null 2>&1 || \
-        apt-get purge -y ${pkgs} >> /tmp/minos-core-settings.debug 2>&1
+    #avoid errors from removing pkgs which weren't at the initial state but
+    #which could had been added in abused apt instances
+    [ -f /var/lib/dpkg/status-append-queue ] && \
+        busybox cat /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
+    apt-get purge -y     ${pkgs} > /dev/null 2>&1 || apt-get purge -y ${pkgs}
     _rm_status_apt_queue ${pkgs}
     _continue_dpkg_process
 }
