@@ -3,14 +3,14 @@
 . /usr/share/debconf/confmodule
 
 #close stdout
-exec 1<&-
-#close stderr
-exec 2<&-
-#open stdout as $log_file file for read and write.
-exec 1<> /tmp/minos-core-settings."${$}".debug
-#redirect stderr to stdout
-exec 2>&1
-set -x #enable trace mode
+#exec 1<&-
+##close stderr
+#exec 2<&-
+##open stdout as $log_file file for read and write.
+#exec 1<> /tmp/minos-core-settings."${$}".debug
+##redirect stderr to stdout
+#exec 2>&1
+#set -x #enable trace mode
 
 package="minos-core-settings"
 users="$(busybox cat /etc/passwd | busybox awk -F: '{if ($3 >= 1000 && $3 < 60000) print $1}')"
@@ -19,7 +19,7 @@ diverge_dir="/usr/share/minos/diverge"
 _diverge_element() {
     _diverge__orig="${1}"
     _diverge__new="${2}"
-    _diverge__backup="$(printf "%s" "${_diverge__orig}" | sed 's:/:##:g')"
+    _diverge__backup="$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
 
     if ! LC_ALL=C dpkg-divert --list "${package}" | \
         grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
@@ -33,7 +33,7 @@ _diverge_element() {
 _undiverge_element() {
     _diverge__orig="${1}"
     _diverge__new="${2}"
-    _diverge__backup="$(printf "%s" "${_diverge__orig}" | sed 's:/:##:g')"
+    _diverge__backup="$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
 
     if LC_ALL=C dpkg-divert --list "${package}" | \
         grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
@@ -98,7 +98,7 @@ _recover_file_on_system_users() {
     for user in ${users}; do
         h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
         su "${user}" -c "test -f ~/.minos/not_override" && continue
-        archive="$(printf "%s" "${1}" | sed "s:\$HOME:${h}:g;s:~/:${h}/:;s:\"::g;s:\'::g;")"
+        archive="$(printf "%s\\n" "${1}" | sed "s:\$HOME:${h}:g;s:~/:${h}/:;s:\"::g;s:\'::g;")"
 
         last_file="$(_get_last_file_version "${archive}")"
 
@@ -123,8 +123,8 @@ _ensure_setting_is_set() {
     [ -z "${2}" ]   && return 1
     [ ! -f "${2}" ] && return 1
 
-    _ensuresetting__regex="$(printf   "%s" "${1}" | busybox sed 's: :[ \\t]\\+:g')"
-    _ensuresetting__setting="$(printf "%s" "${1}" | busybox cut -d' ' -f1)"
+    _ensuresetting__regex="$(printf   "%s\\n" "${1}" | busybox sed 's: :[ \\t]\\+:g')"
+    _ensuresetting__setting="$(printf "%s\\n" "${1}" | busybox cut -d' ' -f1)"
 
     if busybox grep "$(printf "^%s" "${_ensuresetting__setting}")" "${2}" >/dev/null; then
         if ! busybox grep "$(printf "^%s" "${_ensuresetting__regex}")" "${2}" >/dev/null; then
@@ -139,127 +139,134 @@ _ensure_setting_is_set() {
     fi
 }
 
-_suspend_dpkg_process() {
-    #unlock standard files
-    busybox mv     /var/lib/dpkg/lock           /var/lib/dpkg/lock.suspended
-    busybox rm -rf /var/lib/dpkg/updates.suspended/
-    busybox mv     /var/lib/dpkg/updates/       /var/lib/dpkg/updates.suspended
-    busybox mkdir  /var/lib/dpkg/updates/
-    busybox mv     /var/cache/apt/archives/lock /var/cache/apt/archives/lock.suspended
+_daemonize() {
+    #http://blog.n01se.net/blog-n01se-net-p-145.html
+    [ -z "${1}" ] && return 1
+    (   #1. fork, to guarantee the child is not a process
+        #group leader, necessary for setsid) and have the
+        #parent exit (to allow control to return to the shell)
 
-    #while apt is being executed it modifies the status file which brings conflicts
-    #to new packages if they're installed/removed in abused apt instances, therefore
-    #the status-old file (which represent the original state in which the first
-    #apt instance was launched) is used to create temporal diffs which will be merged
-    #at the end
-    busybox cp     /var/lib/dpkg/status         /var/lib/dpkg/status.suspended
-    busybox cp     /var/lib/dpkg/status-old     /var/lib/dpkg/status-orig
-    busybox cp     /var/lib/dpkg/status-orig    /var/lib/dpkg/status
-}
+        #2. redirect stdin/stdout/stderr before running child
+        [ -t 0 ] && exec  </dev/null
+        [ -t 1 ] && exec  >/dev/null
+        [ -t 2 ] && exec 2>/dev/null
+        if ! command -v "setsid" >/dev/null 2>&1; then
+            #2.1 guard against HUP and INT (in child)
+            trap '' 1 2
+        fi
 
-_continue_dpkg_process() {
-    #relock standard files
-    busybox rm -rf /var/lib/dpkg/updates
-    busybox mv     /var/lib/dpkg/lock.suspended           /var/lib/dpkg/lock
-    busybox mv     /var/lib/dpkg/updates.suspended        /var/lib/dpkg/updates
-    busybox mv     /var/cache/apt/archives/lock.suspended /var/cache/apt/archives/lock
-    busybox mv     /var/lib/dpkg/status.suspended         /var/lib/dpkg/status
-    #keep status-old file to survive multiple abused apt instances
-    busybox mv     /var/lib/dpkg/status-orig              /var/lib/dpkg/status-old
-}
+        #3. ensure cwd isn't a mounted fs so it does't block
+        #umount invocations
+        cd /
 
-_add_status_apt_queue() {
-    diff="$(busybox diff -u /var/lib/dpkg/status-orig /var/lib/dpkg/status | \
-            busybox awk '/^\+/ {if($1 == "+++") {next}; sub(/^\+/,""); print}')"
+        #4. umask (leave this to caller)
+        #umask 0
 
-    #add pkg to the append queue
-    #keeping an additional \\n at the end ensures the format doesn't get weird
-    #after several invocations
-    [ -z "${diff}" ] || printf "%s\\n\\n" "${diff}" >> /var/lib/dpkg/status-append-queue
-    unset diff
+        #5. close unneeded fds
+        #XCU 2.7 Redirection says: open files are represented by
+        #decimal numbers starting with zero. The largest possible
+        #value is implementation-defined; however, all
+        #implementations shall support at least 0 to 9, inclusive,
+        #for use by the application.
+        i=3; while [ "${i}" -le "9" ]; do
+            eval "exec ${i}>&-"
+            i="$(($i + 1))"
+        done
 
-    for pkg in "${@}"; do
-        #remove pkg from the remove queue
-        [ -f /var/lib/dpkg/status-remove-queue ] || continue
-        busybox sed -i '/^'"${pkg}"'$/d' /var/lib/dpkg/status-remove-queue
-    done; unset pkg
-}
-
-_rm_status_apt_queue() {
-    #add pkg to the remove queue
-    for pkg in "${@}"; do
-        printf "%s\\n" "${pkg}" >> /var/lib/dpkg/status-remove-queue
-    done; unset pkg
-}
-
-_abusing_apt_get() {
-    #this script could be invoked from dpkg-reconfigure
-    if busybox ps -o comm,pid  | busybox grep dpkg-reconf >/dev/null 2>&1; then
-        busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1
-    else #or a full apt-get instance
-        [ "$(busybox ps -o comm,pid | busybox grep apt-get >/dev/null 2>&1 | \
-               busybox wc -l)" -gt "1" ]
+        #6. create new session, so the child has no
+        #controlling terminal, this prevents the child from
+        #accesing a terminal (using /dev/tty) and getting
+        #signals from the controlling terminal (e.g. HUP, INT)
+        if command -v "setsid" >/dev/null 2>&1; then
+            exec setsid "$@"
+        elif command -v "nohup" >/dev/null 2>&1; then
+            exec nohup "$@" >/dev/null 2>&1
+        else
+            if [ ! -f "${1}" ]; then
+                "$@"
+            else
+                exec "$@"
+            fi
+        fi
+    ) &
+    #2.2 guard against HUP (in parent)
+    if ! command -v "setsid" >/dev/null 2>&1 \ &&
+       ! command -v "nohup"  >/dev/null 2>&1; then
+        disown -h "${!}"
     fi
 }
 
-_append_status_db() {
-    [ -f /var/lib/dpkg/status-append-queue ] || return
-
-    while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
-    busybox touch /var/lib/dpkg/lock-custom
-
-    while _abusing_apt_get; do
-        sleep 0.1
-    done
-
-    busybox cat    /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
-    busybox rm -rf /var/lib/dpkg/status-append-queue
-    busybox rm -rf /var/lib/dpkg/lock-custom
+_apt_add_queue() {
+    for pkg in "${@}"; do
+        if  busybox grep "${pkg}" /var/lib/apt/apt-rm-queue >/dev/null 2>&1; then
+            busybox sed -i '/^'"${pkg}"'$/d' /var/lib/apt/apt-rm-queue
+        else
+            printf "%s\\n" "${pkg}" >> /var/lib/apt/apt-add-queue
+        fi
+    done; unset pkg
 }
 
-_remove_status_db() {
-    [ -f /var/lib/dpkg/status-remove-queue ] && sleep 0.1 || return
-
-    while [ -f /var/lib/dpkg/lock-custom ]; do sleep 0.1; done
-    busybox touch /var/lib/dpkg/lock-custom
-
-    while _abusing_apt_get; do
-        sleep 0.1
-    done
-
-    for pkg in $(cat /var/lib/dpkg/status-remove-queue); do
-        busybox sed -i '/Package: '"${pkg}"'$/,/^$/d' /var/lib/dpkg/status
-    done
-    busybox rm -rf /var/lib/dpkg/status-remove-queue
-    busybox rm -rf /var/lib/dpkg/lock-custom
+_apt_rm_queue() {
+    for pkg in "${@}"; do
+        if  busybox grep "${pkg}" /var/lib/apt/apt-add-queue >/dev/null 2>&1; then
+            busybox sed -i '/^'"${pkg}"'$/d' /var/lib/apt/apt-add-queue
+        else
+            printf "%s\\n" "${pkg}" >> /var/lib/apt/apt-rm-queue
+        fi
+    done; unset pkg
 }
 
 _apt_install() {
     [ -z "${1}" ] && return
-    pkgs="$(printf "%s\\n" "${@}" | busybox sed "s:minos-core-settings::g")"
-    _suspend_dpkg_process
-    apt-get install --no-install-recommends -y --force-yes ${pkgs} >/dev/null 2>&1 ||
-        apt-get install --no-install-recommends -y --force-yes ${pkgs}
-    _add_status_apt_queue ${pkgs}
-    _continue_dpkg_process
+    _apt_add_queue $(printf "%s\\n" "${@}" | busybox sed "s:minos-core-settings::g")
 }
 
 _apt_purge() {
     [ -z "${1}" ] && return
-    pkgs="$(printf "%s\\n" "${@}" | busybox sed "s:minos-core-settings::g")"
-    _suspend_dpkg_process
-    #avoid errors from removing pkgs which weren't at the initial state but
-    #which could had been added in abused apt instances
-    [ -f /var/lib/dpkg/status-append-queue ] && \
-        busybox cat /var/lib/dpkg/status-append-queue >> /var/lib/dpkg/status
-    apt-get purge -y     ${pkgs} > /dev/null 2>&1 || apt-get purge -y ${pkgs}
-    _rm_status_apt_queue ${pkgs}
-    _continue_dpkg_process
+    _apt_rm_queue $(printf "%s\\n" "${@}" | busybox sed "s:minos-core-settings::g")
 }
 
-_apt_sync_db() {
-    _append_status_db &
-    _remove_status_db &
+_apt_daemon() {
+    [ ! -f /var/lib/apt/apt-add-queue ] && [ ! -f /var/lib/apt/apt-rm-queue ] && return
+    _apt_daemon__script="/var/lib/apt/apt-daemon"
+    _apt_daemon_generator() {
+        printf "%s\\n" "#!/bin/sh"
+        printf "%s\\n" "#autogenerated by minos-core-settings: $(date +%d-%m-%Y:%H:%M)"
+        printf "\\n"
+        printf "%s\\n" "if [ -f /var/lib/apt/apt-add-queue ]; then"
+        printf "%s\\n" "  while :; do"
+        printf "%s\\n" "   DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \\"
+        printf "%s\\n" "      -o Dpkg::Options::=\"--force-confdef\" \\"
+        printf "%s\\n" "      -o Dpkg::Options::=\"--force-confold\" \\"
+        printf "%s\\n" "      --force-yes \$(cat /var/lib/apt/apt-add-queue) && break"
+        printf "%s\\n" "    sleep 0.1 || sleep 1"
+        printf "%s\\n" "  done"
+        printf "%s\\n" "fi"
+        printf "\\n"
+        printf "%s\\n" "if [ -f /var/lib/apt/apt-rm-queue ]; then"
+        printf "%s\\n" "  while :; do"
+        printf "%s\\n" "    DEBIAN_FRONTEND=noninteractive apt-get purge -y \$(cat /var/lib/apt/apt-rm-queue) && break"
+        printf "%s\\n" "    sleep 0.1 || sleep 1"
+        printf "%s\\n" "  done"
+        printf "%s\\n" "fi"
+        printf "\\n"
+        printf "%s\\n" "mv /var/lib/apt/apt-add-queue /var/lib/apt/apt-add-queue.bk"
+        printf "%s\\n" "mv /var/lib/apt/apt-rm-queue  /var/lib/apt/apt-rm-queue.bk"
+        printf "\\n"
+        printf "%s\\n" "rm -rf /var/lib/apt/apt-add-queue"
+        printf "%s\\n" "rm -rf /var/lib/apt/apt-rm-queue"
+        printf "%s\\n" "rm -rf /var/lib/apt/apt-daemon-warning"
+        printf "%s\\n" "rm -rf \"${_apt_daemon__script}\""
+    }
+    _apt_daemon_generator > "${_apt_daemon__script}" && chmod +x "${_apt_daemon__script}"
+    _daemonize /bin/sh   -c "${_apt_daemon__script}"
+}
+
+_apt_daemon_warning() {
+    [ -f /var/lib/apt/apt-daemon-warning ] && return
+    printf "%s\\n" "minos-core-settings: package changes will be applied shortly upon completion of this apt/dpkg instance"
+    printf "%s\\n" "minos-core-settings: DO NOT POWEROFF the system until it completes"
+    touch /var/lib/apt/apt-daemon-warning
 }
 
 _enable_setting() {
@@ -331,7 +338,7 @@ _enable_setting() {
 
                 [ -z "${userpkgs}" ] && continue
 
-                printf "%s\\n" "minos-core-settings: installing ${user}'s defined pkgs: ${userpkgs} ..."
+                printf "%s\\n" "minos-core-settings: adding to install queue ${user}'s defined pkgs: ${userpkgs} ..."
                 _apt_install ${userpkgs}
             done
 
@@ -340,9 +347,11 @@ _enable_setting() {
                      /etc/minos/config 2>/dev/null)"
 
             if [ -n "${globalpkgs}" ]; then
-                printf "%s\\n" "minos-core-settings: installing system defined pkgs: ${globalpkgs} ..."
+                printf "%s\\n" "minos-core-settings: adding to install queue system defined pkgs: ${globalpkgs} ..."
                 _apt_install ${globalpkgs}
             fi
+
+            _apt_daemon_warning
             ;;
 
         app-purge)
@@ -356,7 +365,7 @@ _enable_setting() {
 
                 [ -z "${rm_userpkgs}" ] && continue
 
-                printf "%s\\n" "minos-core-settings: removing ${user}'s defined pkgs: ${rm_userpkgs} ..."
+                printf "%s\\n" "minos-core-settings: adding to remove queue ${user}'s defined pkgs: ${rm_userpkgs} ..."
                 _apt_purge ${rm_userpkgs}
             done
 
@@ -365,9 +374,11 @@ _enable_setting() {
                      /etc/minos/config 2>/dev/null)"
 
             if [ -n "${rm_globalpkgs}" ]; then
-                printf "%s\\n" "minos-core-settings: removing system defined pkgs: ${rm_globalpkgs} ..."
+                printf "%s\\n" "minos-core-settings: adding to remove queue system defined pkgs: ${rm_globalpkgs} ..."
                 _apt_purge ${rm_globalpkgs}
             fi
+
+            _apt_daemon_warning
             ;;
 
          dotfiles)
@@ -597,11 +608,9 @@ _disable_setting() {
             _recover_file_on_system_users '~/.bash_profile'
             ;;
 
-        app-core)
+        app-core|app-purge)
             : #reverse process?
             ;;
-
-        app-purge) : ;;
 
         dotfiles)
             for user in ${users}; do
@@ -624,7 +633,7 @@ _disable_setting() {
                 busybox mkdir -p /tmp/minos-core-settings
                 git clone --depth=1  "${dotrepo}" /tmp/minos-core-settings/"${bdotrepo}" >/dev/null
 
-                for dotfile in  /tmp/minos-core-settings/"${bdotrepo}"/.*; do
+                for dotfile in /tmp/minos-core-settings/"${bdotrepo}"/.*; do
                     [ ! -e "${dotfile}" ] && continue
                     bdotfile="$(busybox basename "${dotfile}")"
 
@@ -684,7 +693,7 @@ case "${1}" in
             setting="${setting%,*}" #remove ',' from tail
             _enable_setting "${setting}"
 
-            default_settings="$(printf "%s" "${default_settings}" | busybox sed 's:'"${setting}"'[, ]*::')"
+            default_settings="$(printf "%s\\n" "${default_settings}" | busybox sed 's:'"${setting}"'[, ]*::')"
         done
 
         #disable not selected items
@@ -693,8 +702,8 @@ case "${1}" in
             _disable_setting "${not_selected_setting}"
         done
 
-        #update apt/dpkg db in case any package was installed on this iteration
-        _apt_sync_db
+        #leave apt daemon running behind to install/remove additional software
+        _apt_daemon
         ;;
     abort-upgrade|abort-deconfigure|abort-remove)
         ;;
