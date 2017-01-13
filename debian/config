@@ -1,21 +1,34 @@
 #!/bin/sh
 set -e
-. /usr/share/debconf/confmodule
+
+#debconf hook. We don't rely on debconf being present at this time.
+if [ -e /usr/share/debconf/confmodule ];then
+    . /usr/share/debconf/confmodule
+    DEBCONFEXISTS="true"
+    export DEBCONFEXISTS
+else
+    DEBCONFEXISTS="false"
+    export DEBCONFEXISTS
+fi
 
 case "${1}" in
     configure)
-        #ask questions
-        db_input medium minos-core-settings/settings || true
-        #show interface
-        db_go || true
+        if [ "$DEBCONFEXISTS" = "true" ]; then
+            #ask questions
+            db_input medium minos-core-settings/settings || true
+            #show interface
+            db_go || true
+        fi
         ;;
     reconfigure)
-        #ask questions
-        db_input medium minos-core-settings/settings || true
-        #show interface
-        db_go || true
+        if [ "$DEBCONFEXISTS" = "true" ]; then
+            #ask questions
+            db_input medium minos-core-settings/settings || true
+            #show interface
+            db_go || true
+        fi
 
-        #workaround for the hacky way of managing configure/reconfigure in maintainer scripts/debconf
+        #workaround the hacky way of managing configure/reconfigure in maintainer scripts/debconf
         if [ -f /var/lib/dpkg/info/minos-core-settings.postinst ]; then
             /var/lib/dpkg/info/minos-core-settings.postinst configure
             true

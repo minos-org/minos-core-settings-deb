@@ -1,6 +1,14 @@
 #!/bin/sh
 
-. /usr/share/debconf/confmodule
+#Debconf hook. We don't rely on debconf being present at this time.
+if [ -e /usr/share/debconf/confmodule ];then
+    . /usr/share/debconf/confmodule
+    DEBCONFEXISTS="true"
+    export DEBCONFEXISTS
+else
+    DEBCONFEXISTS="false"
+    export DEBCONFEXISTS
+fi
 
 #close stdout
 #exec 1<&-
@@ -680,13 +688,15 @@ _disable_setting() {
 
 case "${1}" in
     configure)
-        #get user settings
-        db_get minos-core-settings/settings
-        settings="${RET}"
+        if [ "$DEBCONFEXISTS" = "true" ]; then
+            #get user settings
+            db_get minos-core-settings/settings
+            settings="${RET}"
 
-        #get default settings
-        db_metaget minos-core-settings/settings Choices
-        default_settings="${RET}"
+            #get default settings
+            db_metaget minos-core-settings/settings Choices
+            default_settings="${RET}"
+        fi
 
         #enable selected items
         for setting in ${settings}; do
