@@ -5,4 +5,6 @@ usr/share/minos/profile.d
 usr/share/minos/skel/.profile.d
 usr/share/minos/ssh
 usr/share/minos/update-motd.d
+usr/share/minos/apt.conf.d
+usr/share/minos/debconf
 etc/apt/apt.conf.d

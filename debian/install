@@ -21,3 +21,4 @@ etc##update-motd.d##10-minos-sysinfo       => /usr/share/minos/update-motd.d/10-
 etc##apt##apt.conf.d##05disable-recommends => /usr/share/minos/apt.conf.d/05disable-recommends
 etc##apt##apt.conf.d##05disable-suggests   => /usr/share/minos/apt.conf.d/05disable-suggests
 
+usr##share##debconf##confmodule            => /usr/share/minos/debconf/confmodule
