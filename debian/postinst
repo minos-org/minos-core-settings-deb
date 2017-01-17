@@ -157,7 +157,7 @@ _dpkg_suspend_process() {
 
     #debconf missing file descriptors workaround
     busybox cp /usr/share/debconf/confmodule       /usr/share/debconf/confmodule.bk
-    busybox cp /usr/share/minos/debconf/confmodule /usr/share/debconf/confmodule
+    busybox cp '/usr/share/minos/core-settings/usr##share##debconf##confmodule' /usr/share/debconf/confmodule
 
     #while apt is being executed it modifies the status file which brings conflicts
     #to new packages if they're installed/removed in abused apt instances, therefore
@@ -292,7 +292,7 @@ _daemonize() {
 _apt_add_queue() {
     for pkg in "${@}"; do
         if  busybox grep "${pkg}" /var/lib/apt/apt-rm-queue >/dev/null 2>&1; then
-            busybox sed -i '/^'"${pkg}"'$/d' /var/lib/apt/apt-rm-queue
+            busybox sed -i "/^${pkg}$/d" /var/lib/apt/apt-rm-queue
         else
             if ! busybox grep "^Package: ${pkg}$" /var/lib/dpkg/status >/dev/null 2>&1; then
                 printf "%s\\n" "${pkg}" >> /var/lib/apt/apt-add-queue
@@ -304,7 +304,7 @@ _apt_add_queue() {
 _apt_rm_queue() {
     for pkg in "${@}"; do
         if  busybox grep "${pkg}" /var/lib/apt/apt-add-queue >/dev/null 2>&1; then
-            busybox sed -i '/^'"${pkg}"'$/d' /var/lib/apt/apt-add-queue
+            busybox sed -i "/^${pkg}$/d" /var/lib/apt/apt-add-queue
         else
             if busybox grep "^Package: ${pkg}$" /var/lib/dpkg/status >/dev/null 2>&1; then
                 printf "%s\\n" "${pkg}" >> /var/lib/apt/apt-rm-queue
@@ -326,7 +326,7 @@ _apt_purge() {
 _apt_run() {
     [ ! -f /var/lib/apt/apt-add-queue ] && [ ! -f /var/lib/apt/apt-rm-queue ] && return
 
-    pkgs__add="$(cat /var/lib/apt/apt-add-queue)"
+    pkgs__add="$(cat /var/lib/apt/apt-add-queue 2>/dev/null)"
     if [ -n "${pkgs__add}" ]; then
         _dpkg_suspend_process
         busybox awk '/^Package: /{print $2}' /var/lib/dpkg/status | \
@@ -355,7 +355,7 @@ _apt_run() {
         _dpkg_continue_process
     fi
 
-    pkgs__rm="$(cat /var/lib/apt/apt-rm-queue)"
+    pkgs__rm="$(cat /var/lib/apt/apt-rm-queue 2>/dev/null)"
     if [ -n "${pkgs__rm}" ]; then
         _dpkg_suspend_process
         busybox awk '/^Package: /{print $2}' /var/lib/dpkg/status | \
@@ -387,10 +387,10 @@ _enable_setting() {
             ;;
 
         apt)
-            apt-config dump | grep '^APT::Install-Recommends "false";$' || \
+            apt-config dump | grep '^APT::Install-Recommends "false";$' >/dev/null 2>&1 || \
                 cp /usr/share/minos/apt.conf.d/05disable-recommends /etc/apt/apt.conf.d/05disable-recommends
 
-            apt-config dump | grep '^APT::Install-Suggests "false";$' || \
+            apt-config dump | grep '^APT::Install-Suggests "false";$'   >/dev/null 2>&1 || \
                 cp /usr/share/minos/apt.conf.d/05disable-suggests /etc/apt/apt.conf.d/05disable-suggests
             ;;
 

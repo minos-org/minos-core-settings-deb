@@ -15,7 +15,7 @@ fi
 ##close stderr
 #exec 2<&-
 ##open stdout as $log_file file for read and write.
-#exec 1<> /tmp/minos-core-settings."${$}".debug
+#exec 1<> "/tmp/minos-core-settings.${$}.debug"
 ##redirect stderr to stdout
 #exec 2>&1
 #set -x #enable trace mode
@@ -240,6 +240,7 @@ _apt_purge() {
 
 _apt_daemon() {
     [ ! -f /var/lib/apt/apt-add-queue ] && [ ! -f /var/lib/apt/apt-rm-queue ] && return
+
     _apt_daemon__script="/var/lib/apt/apt-daemon"
     _apt_daemon_generator() {
         printf "%s\\n" "#!/bin/sh"
@@ -289,10 +290,10 @@ _enable_setting() {
             ;;
 
         apt)
-            apt-config dump | grep '^APT::Install-Recommends "false";$' || \
+            apt-config dump | grep '^APT::Install-Recommends "false";$' >/dev/null 2>&1 || \
                 cp /usr/share/minos/apt.conf.d/05disable-recommends /etc/apt/apt.conf.d/05disable-recommends
 
-            apt-config dump | grep '^APT::Install-Suggests "false";$' || \
+            apt-config dump | grep '^APT::Install-Suggests "false";$'   >/dev/null 2>&1 || \
                 cp /usr/share/minos/apt.conf.d/05disable-suggests /etc/apt/apt.conf.d/05disable-suggests
             ;;
 
