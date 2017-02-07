@@ -22,7 +22,7 @@ fi
 
 package="minos-core-settings"
 users="$(busybox cat /etc/passwd | busybox awk -F: '{if ($3 >= 1000 && $3 < 60000) print $1}')"
-diverge_dir="/usr/share/minos/diverge"
+diverge_dir="/usr/share/minos/core-settings/diverge"
 
 _diverge_element() {
     _diverge__orig="${1}"
