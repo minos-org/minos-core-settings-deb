@@ -1,24 +1,2 @@
 #!/usr/bin/dh-exec
-etc##sudoers.d##minos-core                 => /usr/share/minos/sudoers.d/minos-core
-etc##profile.d##minos-bash.sh              => /usr/share/minos/profile.d/minos-bash.sh
-
-etc##skel##.bash_profile                   => /usr/share/minos/skel/.bash_profile
-etc##skel##.aliases                        => /usr/share/minos/skel/.aliases
-etc##skel##.vimrc                          => /usr/share/minos/skel/.vimrc
-etc##skel##.tmux.conf                      => /usr/share/minos/skel/.tmux.conf
-etc##skel##.profile.d##shundle.sh          => /usr/share/minos/skel/.profile.d/shundle.sh
-
-etc##ssh##ssh_config                       => /usr/share/minos/ssh/ssh_config
-etc##gitconfig                             => /usr/share/minos/gitconfig
-
-etc##issue                                 => /usr/share/minos/issue
-etc##issue.net                             => /usr/share/minos/issue.net
-etc##legal                                 => /usr/share/minos/legal
-etc##update-motd.d##00-header              => /usr/share/minos/update-motd.d/00-header
-etc##update-motd.d##10-help-text           => /usr/share/minos/update-motd.d/10-help-text
-etc##update-motd.d##10-minos-sysinfo       => /usr/share/minos/update-motd.d/10-minos-sysinfo
-
-etc##apt##apt.conf.d##05disable-recommends => /usr/share/minos/apt.conf.d/05disable-recommends
-etc##apt##apt.conf.d##05disable-suggests   => /usr/share/minos/apt.conf.d/05disable-suggests
-
-usr##share##debconf##confmodule            => /usr/share/minos/debconf/confmodule
+*##* /usr/share/minos/core-settings/

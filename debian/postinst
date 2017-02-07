@@ -51,8 +51,21 @@ _undiverge_element() {
     fi
 }
 
+_install_minos_setting() {
+    for setting_file in "${@}"; do
+        setting_file_target="$(busybox basename "${setting_file}")"
+        setting_file_target="$(printf "%s\\n" "/${setting_file_target}" | busybox sed 's:##:/:g')"
+        if [ ! -f "${setting_file_target}" ]; then
+            if [ ! -d "$(busybox dirname "${setting_file_target}")" ]; then
+                busybox mkdir -p "$(busybox dirname "${setting_file_target}")" >/dev/null 2>&1
+            fi
+            busybox cp "${setting_file}" "${setting_file_target}"
+        fi
+    done
+}
+
 _get_last_file_version() {
-   #get last version of a bunch of .minos-backup.* files
+    #get last version of a bunch of .minos-backup.* files
     [ -z "${1}" ] && return 1
 
     _getlastversion__files="${1}".minos-backup.*
@@ -387,33 +400,31 @@ _enable_setting() {
             ;;
 
         apt)
-            apt-config dump | grep '^APT::Install-Recommends "false";$' >/dev/null 2>&1 || \
-                cp /usr/share/minos/apt.conf.d/05disable-recommends /etc/apt/apt.conf.d/05disable-recommends
+            apt-config dump | grep '^APT::Install-Recommends "false";$' >/dev/null 2>&1 ||     \
+                _install_minos_setting '/usr/share/minos/core-settings/etc##apt##apt.conf.d##05disable-recommends'
 
-            apt-config dump | grep '^APT::Install-Suggests "false";$'   >/dev/null 2>&1 || \
-                cp /usr/share/minos/apt.conf.d/05disable-suggests /etc/apt/apt.conf.d/05disable-suggests
+            apt-config dump | grep '^APT::Install-Suggests "false";$'   >/dev/null 2>&1 ||   \
+                _install_minos_setting '/usr/share/minos/core-settings/etc##apt##apt.conf.d##05disable-suggests'
             ;;
 
         sudo)
             busybox sed -i "/^#includedir.*\/etc\/sudoers\.d$/d" /etc/sudoers
             busybox sed -i -e "\$ a#includedir /etc/sudoers.d"   /etc/sudoers
-            if [ ! -f /etc/sudoers.d/minos-core ]; then
-                busybox cp /usr/share/minos/sudoers.d/minos-core /etc/sudoers.d/
-            fi
+            _install_minos_setting '/usr/share/minos/core-settings/etc##sudoers.d##minos-core'
             ;;
 
-        ssh) _diverge_element /etc/ssh/ssh_config /usr/share/minos/ssh/ssh_config ;;
-
-        git) _diverge_element /usr/share/minos/gitconfig /etc/gitconfig ;;
+        ssh) _diverge_element /etc/ssh/ssh_config '/usr/share/minos/core-settings/etc##ssh##ssh_config' ;;
+        git) _diverge_element /etc/gitconfig '/usr/share/minos/core-settings/etc##gitconfig' ;;
 
         motd)
-            _diverge_element /etc/issue /usr/share/minos/issue
-            _diverge_element /etc/issue.net /usr/share/minos/issue.net
-            _diverge_element /etc/legal /usr/share/minos/legal
-            _diverge_element /etc/update-motd.d/00-header /usr/share/minos/update-motd.d/00-header
-            _diverge_element /etc/update-motd.d/10-help-text /usr/share/minos/update-motd.d/10-help-text
-            [ -f /etc/update-motd.d/10-minos-sysinfo ] || \
-                ln -s /usr/share/minos/update-motd.d/10-minos-sysinfo /etc/update-motd.d/10-minos-sysinfo
+            _diverge_element /etc/issue     '/usr/share/minos/core-settings/etc##issue'
+            _diverge_element /etc/issue.net '/usr/share/minos/core-settings/etc##issue.net'
+            _diverge_element /etc/legal     '/usr/share/minos/core-settings/etc##legal'
+            _diverge_element /etc/update-motd.d/00-header    '/usr/share/minos/core-settings/etc##update-motd.d##00-header'
+            _diverge_element /etc/update-motd.d/10-help-text '/usr/share/minos/core-settings/etc##update-motd.d##10-help-text'
+            if [ ! -f /etc/update-motd.d/10-minos-sysinfo ]; then
+                ln -s '/usr/share/minos/core-settings/etc##update-motd.d##10-minos-sysinfo' /etc/update-motd.d/10-minos-sysinfo
+            fi
             ;;
 
         tmpfs) _ensure_setting_is_set "tmpfs /tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0" /etc/fstab ;;
@@ -427,13 +438,11 @@ _enable_setting() {
             ;;
 
         minos-bash)
-            if [ ! -f /etc/profile.d/minos-bash.sh ]; then
-                busybox cp /usr/share/minos/profile.d/minos-bash.sh /etc/profile.d/minos-bash.sh
-            fi
+            _install_minos_setting '/usr/share/minos/core-settings/etc##profile.d##minos-bash.sh'
             ;;
 
         bash_profile)
-            [ -f /etc/skel/.bash_profile ] || busybox cp /usr/share/minos/skel/.bash_profile /etc/skel/
+            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.bash_profile'
             _replace_file_on_system_users '/etc/skel/.bash_profile' '~/.bash_profile'
             ;;
 
@@ -542,27 +551,27 @@ _enable_setting() {
             ;;
 
        aliases)
-            [ ! -f /etc/skel/.aliases ] && busybox cp /usr/share/minos/skel/.aliases /etc/skel/.aliases
+            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.aliases'
             _replace_file_on_system_users '/etc/skel/.aliases' '~/.aliases'
             ;;
 
         vim)
-            busybox cp -rL /usr/share/minos/skel/.vimrc /etc/skel/.vimrc
+            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.vimrc'
             _replace_file_on_system_users '/etc/skel/.vimrc' '~/.vimrc'
 
-            if [ -d /usr/share/minos/skel/.vim/bundle/vundle/.git/ ]; then
-                (cd /usr/share/minos/skel/.vim/bundle/vundle && git pull) >/dev/null 2>&1
+            if [ -d /usr/share/minos/cache/vim/bundle/vundle/.git/ ]; then
+                (cd /usr/share/minos/cache/vim/bundle/vundle && git pull)  >/dev/null 2>&1
             else
-                busybox rm -rf /usr/share/minos/skel/.vim/bundle/vundle
+                busybox rm -rf /usr/share/minos/cache/vim
                 #git clone --depth=1 "https://github.com/chilicuil/vundle" \
                 git clone --depth=1 https://git::@github.com/chilicuil/vundle.git \
-                    "/usr/share/minos/skel/.vim/bundle/vundle" >/dev/null
+                    /usr/share/minos/cache/vim/bundle/vundle/ >/dev/null
             fi
 
-            if [ -d /usr/share/minos/skel/.vim/bundle/vundle/.git/ ]; then
-                busybox rm -rf   /etc/skel/.vim/bundle/vundle
+            if [ -d /usr/share/minos/cache/vim/bundle/vundle/.git/ ]; then
+                busybox rm -rf   /etc/skel/.vim
                 busybox mkdir -p /etc/skel/.vim/bundle
-                busybox cp -rL   /usr/share/minos/skel/.vim/bundle/vundle /etc/skel/.vim/bundle/
+                busybox cp -rL   /usr/share/minos/cache/vim/bundle/vundle/ /etc/skel/.vim/bundle/
 
                 for user in ${users}; do
                     su "${user}" -c "test -f ~/.minos/not_override" && continue
@@ -576,21 +585,21 @@ _enable_setting() {
             ;;
 
         tmux)
-            busybox cp -rL /usr/share/minos/skel/.tmux.conf /etc/skel/.tmux.conf
+            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.tmux.conf'
             _replace_file_on_system_users '/etc/skel/.tmux.conf' '~/.tmux.conf'
 
-            if [ -d /usr/share/minos/skel/.tmux/plugins/tundle/.git/ ]; then
-                (cd /usr/share/minos/skel/.tmux/plugins/tundle && git pull) >/dev/null 2>&1
+            if [ -d /usr/share/minos/cache/tmux/plugins/tundle/.git/ ]; then
+                (cd /usr/share/minos/cache/tmux/plugins/tundle && git pull) >/dev/null 2>&1
             else
-                busybox rm -rf /usr/share/minos/skel/.tmux/plugins/tundle
+                busybox rm -rf /usr/share/minos/cache/tmux
                 git clone --depth=1 "https://github.com/chilicuil/tundle" \
-                    "/usr/share/minos/skel/.tmux/plugins/tundle" >/dev/null
+                    "/usr/share/minos/cache/tmux/plugins/tundle" >/dev/null
             fi
 
-            if [ -d /usr/share/minos/skel/.tmux/plugins/tundle/.git/ ]; then
-                busybox rm -rf   /etc/skel/.tmux/plugins/tundle
+            if [ -d /usr/share/minos/cache/tmux/plugins/tundle/.git/ ]; then
+                busybox rm -rf   /etc/skel/.tmux
                 busybox mkdir -p /etc/skel/.tmux/plugins
-                busybox cp -rL   /usr/share/minos/skel/.tmux/plugins/tundle /etc/skel/.tmux/plugins/
+                busybox cp -rL   /usr/share/minos/cache/tmux/plugins/tundle /etc/skel/.tmux/plugins/
                 for user in ${users}; do
                     su "${user}" -c "test -f ~/.minos/not_override" && continue
                     su "${user}" -c "busybox mkdir -p ~/.tmux/plugins/" > /dev/null 2>&1
@@ -602,8 +611,7 @@ _enable_setting() {
             ;;
 
         shundle)
-            busybox mkdir -p /etc/skel/.profile.d
-            busybox cp /usr/share/minos/skel/.profile.d/shundle.sh /etc/skel/.profile.d/
+            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.profile.d##shundle.sh'
 
             for user in ${users}; do
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
@@ -611,17 +619,17 @@ _enable_setting() {
             done
             _replace_file_on_system_users '/etc/skel/.profile.d/shundle.sh' '~/.profile.d/shundle.sh'
 
-            if [ -d /usr/share/minos/skel/.shundle/bundle/shundle/.git/ ]; then
-                (cd /usr/share/minos/skel/.shundle/bundle/shundle && git pull) > /dev/null 2>&1
+            if [ -d /usr/share/minos/cache/shundle/bundle/shundle/.git/ ]; then
+                (cd /usr/share/minos/cache/shundle/bundle/shundle && git pull) > /dev/null 2>&1
             else
-                busybox rm -rf /usr/share/minos/skel/.shundle
+                busybox rm -rf /usr/share/minos/cache/shundle
                 git clone --depth=1 "https://github.com/chilicuil/shundle" \
-                    "/usr/share/minos/skel/.shundle/bundle/shundle" >/dev/null
+                    "/usr/share/minos/cache/shundle/bundle/shundle" >/dev/null
             fi
 
-            if [ -d /usr/share/minos/skel/.shundle/bundle/shundle/.git/ ]; then
+            if [ -d /usr/share/minos/cache/shundle/bundle/shundle/.git/ ]; then
                 busybox rm -rf /etc/skel/.shundle
-                busybox cp -rL /usr/share/minos/skel/.shundle/ /etc/skel/.shundle
+                busybox cp -rL /usr/share/minos/cache/shundle/ /etc/skel/.shundle
                 _replace_file_on_system_users '/etc/skel/.shundle' '~/.shundle'
 
                 for user in ${users}; do
@@ -687,15 +695,16 @@ _disable_setting() {
             ;;
 
         sudo) busybox rm -rf /etc/sudoers.d/minos-core ;;
-        ssh) _undiverge_element /etc/ssh/ssh_config /usr/share/minos/ssh/ssh_config ;;
-        git) _undiverge_element /usr/share/minos/gitconfig /etc/gitconfig ;;
+        ssh) _undiverge_element /etc/ssh/ssh_config '/usr/share/minos/core-settings/etc##ssh##ssh_config' ;;
+        git) _undiverge_element /etc/gitconfig '/usr/share/minos/core-settings/etc##gitconfig' ;;
 
         motd)
-            _undiverge_element /etc/issue /usr/share/minos/issue
-            _undiverge_element /etc/issue.net /usr/share/minos/issue.net
-            _undiverge_element /etc/legal /usr/share/minos/legal
-            _undiverge_element /etc/update-motd.d/00-header /usr/share/minos/update-motd.d/00-header
-            _undiverge_element /etc/update-motd.d/10-help-text /usr/share/minos/update-motd.d/10-help-text
+            _undiverge_element /etc/issue     '/usr/share/minos/core-settings/etc##issue'
+            _undiverge_element /etc/issue.net '/usr/share/minos/core-settings/etc##issue.net'
+            _undiverge_element /etc/legal     '/usr/share/minos/core-settings/etc##legal'
+            _undiverge_element /etc/update-motd.d/00-header    '/usr/share/minos/core-settings/etc##update-motd.d##00-header'
+            _undiverge_element /etc/update-motd.d/10-help-text '/usr/share/minos/core-settings/etc##update-motd.d##10-help-text'
+
             rm -rf /etc/update-motd.d/10-minos-sysinfo
             ;;
 
@@ -711,7 +720,7 @@ _disable_setting() {
             _recover_file_on_system_users '~/.bash_profile'
             ;;
 
-        app-core|app-purge) : ;; #reverse process?
+        app-core|app-purge) : ;; #what would be the reverse process?
 
         dotfiles)
             for user in ${users}; do
