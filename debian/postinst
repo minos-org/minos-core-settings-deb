@@ -441,7 +441,7 @@ _enable_setting() {
             _install_minos_setting '/usr/share/minos/core-settings/etc##profile.d##minos-bash.sh'
             ;;
 
-        bash_profile)
+        bash-profile)
             _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.bash_profile'
             _replace_file_on_system_users '/etc/skel/.bash_profile' '~/.bash_profile'
             ;;
@@ -715,7 +715,7 @@ _disable_setting() {
         locales) : ;;
         minos-bash) busybox rm -rf /etc/profile.d/minos-bash.sh ;;
 
-        bash_profile)
+        bash-profile)
             busybox rm -rf /etc/skel/.bash_profile
             _recover_file_on_system_users '~/.bash_profile'
             ;;

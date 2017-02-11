@@ -1,7 +1,7 @@
 Template: minos-core-settings/settings
 Type: multiselect
-Choices: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash_profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
-Default: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash_profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Choices: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Default: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
 Description: Select the settings to be applied.
  Minos default behavor requires additional settings to fullfill the minos
  experience, all add-ons can be enabled or disabled by marking the
@@ -31,7 +31,7 @@ Description: Select the settings to be applied.
  .
     -/etc/profile.d/minos-bash.sh
  .
- bash_profile: add local gpg-agent and tmux autolaunchers on incomming ssh
+ bash-profile: add local gpg-agent and tmux autolaunchers on incomming ssh
  connection (Recommended)
  .
     - /etc/skel/.bash_profile
