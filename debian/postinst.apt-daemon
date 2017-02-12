@@ -59,7 +59,7 @@ _install_minos_setting() {
             if [ ! -d "$(busybox dirname "${setting_file_target}")" ]; then
                 busybox mkdir -p "$(busybox dirname "${setting_file_target}")" >/dev/null 2>&1
             fi
-            busybox cp "${setting_file}" "${setting_file_target}"
+            busybox ln -s "${setting_file}" "${setting_file_target}"
         fi
     done
 }
