@@ -30,11 +30,11 @@ _diverge_element() {
     _diverge__backup="$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
 
     if ! LC_ALL=C dpkg-divert --list "${package}" | \
-        grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
-        mkdir -p "${diverge_dir}"
-        dpkg-divert --package "${package}" --add --rename \
+        busybox grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        busybox mkdir -p "${diverge_dir}"
+        dpkg-divert --package "${package}" --rename --add \
             --divert "${diverge_dir}/${_diverge__backup}" "${_diverge__orig}"
-        ln -s "${_diverge__new}" "${_diverge__orig}"
+        busybox ln -s "${_diverge__new}" "${_diverge__orig}" || :
     fi
 }
 
@@ -44,10 +44,10 @@ _undiverge_element() {
     _diverge__backup="$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
 
     if LC_ALL=C dpkg-divert --list "${package}" | \
-        grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
-        rm -rf "${_diverge__orig}"
+        busybox grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        busybox rm -rf "${_diverge__orig}"
         dpkg-divert --package "${package}" --rename --remove "${_diverge__orig}"
-        rmdir "${diverge_dir}" 2>/dev/null || :
+        busybox rmdir "${diverge_dir}" 2>/dev/null || :
     fi
 }
 
@@ -61,6 +61,14 @@ _install_minos_setting() {
             fi
             busybox ln -s "${setting_file}" "${setting_file_target}"
         fi
+    done
+}
+
+_uninstall_minos_setting() {
+    for setting_file in "${@}"; do
+        setting_file_target="$(busybox basename "${setting_file}")"
+        setting_file_target="$(printf "%s\\n" "/${setting_file_target}" | busybox sed 's:##:/:g')"
+        busybox rm -rf "${setting_file_target}"
     done
 }
 
@@ -110,6 +118,7 @@ _replace_file_on_system_users() {
                 su "${user}" -c "busybox cp -rL ${1} ${2}"
             fi
         else
+            su "${user}" -c "busybox mkdir -p $(busybox dirname "${2}")"
             su "${user}" -c "busybox cp -rL ${1} ${2}"
         fi
     done
@@ -119,7 +128,7 @@ _recover_file_on_system_users() {
     for user in ${users}; do
         h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
         su "${user}" -c "test -f ~/.minos/not_override" && continue
-        archive="$(printf "%s\\n" "${1}" | sed "s:\$HOME:${h}:g;s:~/:${h}/:;s:\"::g;s:\'::g;")"
+        archive="$(printf "%s\\n" "${1}" | busybox sed "s:\$HOME:${h}:g;s:~/:${h}/:;s:\"::g;s:\'::g;")"
 
         last_file="$(_get_last_file_version "${archive}")"
 
@@ -158,6 +167,20 @@ _ensure_setting_is_set() {
             busybox sed -i -e "\$ a${1}" "${2}"
         fi
     fi
+}
+
+_merge_settings() {
+    [ -f "${1}" ] && [ -f "${2}" ] || return 1
+    setting_file_origin="${1}"
+    setting_file_target="${2}"
+
+    OLDIFS="${IFS}"; IFS='
+'
+    for line in $(busybox cat "${setting_file_origin}"); do
+        if ! busybox grep "^${line}$" "${setting_file_target}" > /dev/null 2>&1; then
+            printf "%s\\n" "${line}" >> "${setting_file_target}"
+        fi
+    done; IFS="${OLDIFS}"
 }
 
 _dpkg_suspend_process() {
@@ -648,13 +671,12 @@ _enable_setting() {
                      /etc/minos/config 2>/dev/null)"
 
             if [ -n "${globalhook}" ]; then
-                (su "${user}" -c "busybox wget ${globalhook} -O /bin/${package}-hook" || \
-                    su "${user}" -c "wget ${globalhook} -O /bin/${package}-hook") >/dev/null 2>&1
-                if [ -f /bin/${package}-hook ]; then
-                    busybox chmod +x /bin/${package}-hook
+                (busybox wget "${globalhook}" -O "/bin/${package}-hook" || \
+                    wget "${globalhook}" -O "/bin/${package}-hook") >/dev/null
+                if [ -f "/bin/${package}-hook" ]; then
+                    busybox chmod +x "/bin/${package}-hook"
                     printf "%s\\n" "${package}: executing system defined hook: ${globalhook}"
-                    /bin/"${package}"-hook core
-                    busybox rm -rf /bin/"${package}"-hook
+                    "/bin/${package}-hook" core
                 fi
             fi
 
@@ -669,14 +691,13 @@ _enable_setting() {
                 [ -z "${userhook}" ] && continue
 
                 (su "${user}" -c "busybox wget ${userhook} -O ~/.${package}-hook" || \
-                    su "${user}" -c "wget ${userhook} -O ~/.${package}-hook") >/dev/null 2>&1
+                    su "${user}" -c "wget ${userhook} -O ~/.${package}-hook") >/dev/null
 
                 su "${user}" -c "test -f  ~/.${package}-hook" || continue
                 su "${user}" -c "busybox chmod +x ~/.${package}-hook"
 
                 printf "%s\\n" "${package}: executing $user's defined hook: ${userhook}"
                 su "${user}" -c "~/.${package}-hook core"
-                su "${user}" -c "busybox rm -rf ~/.${package}-hook"
             done
             ;;
     esac
