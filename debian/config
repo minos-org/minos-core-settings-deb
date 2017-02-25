@@ -29,10 +29,11 @@ case "${1}" in
         fi
 
         #workaround the hacky way of managing configure/reconfigure in maintainer scripts/debconf
-        if [ -f /var/lib/dpkg/info/minos-core-settings.postinst ]; then
-            /var/lib/dpkg/info/minos-core-settings.postinst configure
-            true
-        fi
+        #not required on ubuntu 14.04 and above
+        #if [ -f /var/lib/dpkg/info/minos-core-settings.postinst ]; then
+            #/var/lib/dpkg/info/minos-core-settings.postinst configure
+            #true
+        #fi
         ;;
     *)
         printf "%s\\n" "${0} called with unknown argument \`${1}'" 1>&2

@@ -21,8 +21,10 @@ fi
 #set -x #enable trace mode
 
 package="minos-core-settings"
+package_dir="/usr/share/minos/core-settings"
+diverge_dir="${package_dir}/diverge"
+
 users="$(busybox cat /etc/passwd | busybox awk -F: '{if ($3 >= 1000 && $3 < 60000) print $1}')"
-diverge_dir="/usr/share/minos/core-settings/diverge"
 
 _diverge_element() {
     _diverge__orig="${1}"
@@ -30,10 +32,12 @@ _diverge_element() {
     _diverge__backup="$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
 
     if ! LC_ALL=C dpkg-divert --list "${package}" | \
-        busybox grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        #busybox grep don't support the -x flag in old releases
         busybox mkdir -p "${diverge_dir}"
         dpkg-divert --package "${package}" --rename --add \
             --divert "${diverge_dir}/${_diverge__backup}" "${_diverge__orig}"
+
         busybox ln -s "${_diverge__new}" "${_diverge__orig}" || :
     fi
 }
@@ -44,7 +48,8 @@ _undiverge_element() {
     _diverge__backup="$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
 
     if LC_ALL=C dpkg-divert --list "${package}" | \
-        busybox grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        #busybox grep don't support the -x flag in old releases
         busybox rm -rf "${_diverge__orig}"
         dpkg-divert --package "${package}" --rename --remove "${_diverge__orig}"
         busybox rmdir "${diverge_dir}" 2>/dev/null || :
@@ -55,7 +60,7 @@ _install_minos_setting() {
     for setting_file in "${@}"; do
         setting_file_target="$(busybox basename "${setting_file}")"
         setting_file_target="$(printf "%s\\n" "/${setting_file_target}" | busybox sed 's:##:/:g')"
-        if [ ! -f "${setting_file_target}" ]; then
+        if [ ! -e "${setting_file_target}" ]; then
             if [ ! -d "$(busybox dirname "${setting_file_target}")" ]; then
                 busybox mkdir -p "$(busybox dirname "${setting_file_target}")" >/dev/null 2>&1
             fi
@@ -69,6 +74,8 @@ _uninstall_minos_setting() {
         setting_file_target="$(busybox basename "${setting_file}")"
         setting_file_target="$(printf "%s\\n" "/${setting_file_target}" | busybox sed 's:##:/:g')"
         busybox rm -rf "${setting_file_target}"
+        [ -d "$(busybox dirname "${setting_file_target}")" ] && \
+        busybox rmdir --ignore-fail-on-non-empty "$(busybox dirname "${setting_file_target}")"
     done
 }
 
@@ -102,17 +109,18 @@ _get_last_file_version() {
     fi
 }
 
-_replace_file_on_system_users() {
+_install_element_system_users() {
+    test -e "${1}" || return 1
     for user in ${users}; do
         su "${user}" -c "test -f ~/.minos/not_override" && continue
 
-        if su "${user}" -c "test -f ${2}" || su "${user}" -c "test -d ${2}"; then
-            dist_size="$(su "${user}" -c "busybox du -s ${1}"|busybox cut -f1)"
-            user_size="$(su "${user}" -c "busybox du -s ${2}"|busybox cut -f1)"
-            vdotfile="minos-backup.$(busybox date +"%d-%m-%Y-%H:%M")"
+        if su "${user}" -c "test -e ${2}"; then
+            dist_size="$(su "${user}" -c "busybox du -sL ${1}"|busybox cut -f1)"
+            user_size="$(su "${user}" -c "busybox du -sL ${2}"|busybox cut -f1)"
             if [ X"${dist_size}" = X"${user_size}" ]; then
                 continue
             else
+                vdotfile="minos-backup.$(busybox date +"%d-%m-%Y-%H:%M")"
                 printf "%s\\n" "${package}: old $user's ${2} archive found, replacing and creating backup to ${2}.${vdotfile}"
                 su "${user}" -c "busybox mv ${2} ${2}.${vdotfile}"
                 su "${user}" -c "busybox cp -rL ${1} ${2}"
@@ -124,22 +132,34 @@ _replace_file_on_system_users() {
     done
 }
 
-_recover_file_on_system_users() {
+_uninstall_element_system_users() {
+    test -n "${2}" || return 1
     for user in ${users}; do
-        h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
         su "${user}" -c "test -f ~/.minos/not_override" && continue
-        archive="$(printf "%s\\n" "${1}" | busybox sed "s:\$HOME:${h}:g;s:~/:${h}/:;s:\"::g;s:\'::g;")"
 
+        h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
+        archive="$(printf "%s\\n" "${2}" | busybox sed "s:\$HOME:${h}:g;s:~/:${h}/:;s:\"::g;s:\'::g;")"
         last_file="$(_get_last_file_version "${archive}")"
 
-        if su "${user}" -c "test -f ${last_file}" || su "${user}" -c "test -d ${last_file}"; then
-            user_size="$(su "${user}" -c "busybox du -s ${1}"|busybox cut -f1)"
-            last_size="$(su "${user}" -c "busybox du -s ${last_file}"|busybox cut -f1)"
-            if [ X"${last_size}" = X"${user_size}" ]; then
-                continue
-            else
-                printf "%s\\n" "${package}: old $user's archive found, recovering last version to ${1}"
-                su "${user}" -c "busybox mv ${last_file} ${1}"
+        if test -e "${1}" && su "${user}" -c "test -e ${2}"; then
+            dist_size="$(su "${user}" -c "busybox du -sL ${1}"|busybox cut -f1)"
+            user_size="$(su "${user}" -c "busybox du -sL ${2}"|busybox cut -f1)"
+            if [ X"${dist_size}" = X"${user_size}" ]; then
+                rm -rf "${archive}"
+                busybox rmdir --ignore-fail-on-non-empty "$(busybox dirname "${archive}")"
+            fi
+        fi
+
+        if su "${user}" -c "test -e ${last_file}"; then
+            if su "${user}" -c "test -e ${2}"; then
+                user_size="$(su "${user}" -c "busybox du -sL ${2}"|busybox cut -f1)"
+                last_size="$(su "${user}" -c "busybox du -sL ${last_file}"|busybox cut -f1)"
+                if [ X"${last_size}" = X"${user_size}" ]; then
+                    continue
+                else
+                    printf "%s\\n" "${package}: old $user's archive found, recovering last version to ${2}"
+                    su "${user}" -c "busybox mv ${last_file} ${2}"
+                fi
             fi
         fi
     done
@@ -149,6 +169,7 @@ _ensure_setting_is_set() {
     #ensure setting($1) is enabled in configuration file($2)
     # /etc/sysctl.conf
     # /etc/fstab
+    # ~/.gnupg/gpg.conf
     [ -z "${1}" ]   && return 1
     [ -z "${2}" ]   && return 1
     [ ! -f "${2}" ] && return 1
@@ -327,29 +348,29 @@ _enable_setting() {
 
         apt)
             apt-config dump | grep '^APT::Install-Recommends "false";$' >/dev/null 2>&1 || \
-                _install_minos_setting '/usr/share/minos/core-settings/etc##apt##apt.conf.d##05disable-recommends'
+                _install_minos_setting "${package_dir}/etc##apt##apt.conf.d##05disable-recommends"
 
             apt-config dump | grep '^APT::Install-Suggests "false";$'   >/dev/null 2>&1 || \
-                _install_minos_setting '/usr/share/minos/core-settings/etc##apt##apt.conf.d##05disable-suggests'
+                _install_minos_setting "${package_dir}/etc##apt##apt.conf.d##05disable-suggests"
             ;;
 
         sudo)
             busybox sed -i "/^#includedir.*\/etc\/sudoers\.d$/d" /etc/sudoers
             busybox sed -i -e "\$ a#includedir /etc/sudoers.d"   /etc/sudoers
-            _install_minos_setting '/usr/share/minos/core-settings/etc##sudoers.d##minos-core'
+            _install_minos_setting "${package_dir}/etc##sudoers.d##minos-core"
             ;;
 
-        ssh) _diverge_element /etc/ssh/ssh_config '/usr/share/minos/core-settings/etc##ssh##ssh_config' ;;
-        git) _diverge_element /etc/gitconfig '/usr/share/minos/core-settings/etc##gitconfig' ;;
+        ssh) _diverge_element /etc/ssh/ssh_config "${package_dir}/etc##ssh##ssh_config" ;;
+        git) _diverge_element /etc/gitconfig "${package_dir}/etc##gitconfig" ;;
 
         motd)
-            _diverge_element /etc/issue     '/usr/share/minos/core-settings/etc##issue'
-            _diverge_element /etc/issue.net '/usr/share/minos/core-settings/etc##issue.net'
-            _diverge_element /etc/legal     '/usr/share/minos/core-settings/etc##legal'
-            _diverge_element /etc/update-motd.d/00-header    '/usr/share/minos/core-settings/etc##update-motd.d##00-header'
-            _diverge_element /etc/update-motd.d/10-help-text '/usr/share/minos/core-settings/etc##update-motd.d##10-help-text'
+            _diverge_element /etc/issue     "${package_dir}/etc##issue"
+            _diverge_element /etc/issue.net "${package_dir}/etc##issue.net"
+            _diverge_element /etc/legal     "${package_dir}/etc##legal"
+            _diverge_element /etc/update-motd.d/00-header    "${package_dir}/etc##update-motd.d##00-header"
+            _diverge_element /etc/update-motd.d/10-help-text "${package_dir}/etc##update-motd.d##10-help-text"
             if [ ! -f /etc/update-motd.d/10-minos-sysinfo ]; then
-                ln -s '/usr/share/minos/core-settings/etc##update-motd.d##10-minos-sysinfo' /etc/update-motd.d/10-minos-sysinfo
+                _install_minos_setting "${package_dir}/etc##update-motd.d##10-minos-sysinfo"
             fi
             ;;
 
@@ -364,12 +385,12 @@ _enable_setting() {
             ;;
 
         minos-bash)
-            _install_minos_setting '/usr/share/minos/core-settings/etc##profile.d##minos-bash.sh'
+            _install_minos_setting "${package_dir}/etc##profile.d##minos-bash.sh"
             ;;
 
         bash-profile)
-            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.bash_profile'
-            _replace_file_on_system_users '/etc/skel/.bash_profile' '~/.bash_profile'
+            _install_minos_setting "${package_dir}/etc##skel##.bash_profile"
+            _install_element_system_users '/etc/skel/.bash_profile' '~/.bash_profile'
             ;;
 
         app-core)
@@ -404,7 +425,7 @@ _enable_setting() {
 
                 rm_userpkgs="$(busybox awk -v pattern="^app-purge"   \
                     '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                    "${h}"/.minos/config 2>/dev/null)"
+                    "${h}/.minos/config" 2>/dev/null)"
 
                 [ -z "${rm_userpkgs}" ] && continue
 
@@ -429,7 +450,7 @@ _enable_setting() {
 
                 dotrepo="$(busybox awk -v pattern="^dotfiles"        \
                     '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                    "${h}"/.minos/config 2>/dev/null)"
+                    "${h}/.minos/config" 2>/dev/null)"
 
                 if [ -z "${dotrepo}" ]; then
                     dotrepo="$(busybox awk -v pattern="^dotfiles"    \
@@ -457,9 +478,9 @@ _enable_setting() {
 
                     ownerdotfile="$(stat -c %U "${h}")" || ownerdotfile="${user}"
                     groupdotfile="$(stat -c %G "${h}")" || groupdotfile="${user}"
-                    vdotfile="minos-backup.$(busybox date +"%d-%m-%Y-%H:%M")"
 
                     if [ -e "${h}"/"${bdotfile}" ]; then
+                        vdotfile="minos-backup.$(busybox date +"%d-%m-%Y-%H:%M")"
                         printf "%s\\n" "${package}: old $user's ~/.${bdotfile} archive found, replacing and creating backup in ~/.${bdotfile}.${vdotfile}"
                         su "${user}" -c "busybox mv \"${h}\"/\"${bdotfile}\" \"${h}\"/\"${bdotfile}\".\"${vdotfile}\"" >/dev/null 2>&1
                     fi
@@ -477,33 +498,34 @@ _enable_setting() {
             ;;
 
        aliases)
-            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.aliases'
-            _replace_file_on_system_users '/etc/skel/.aliases' '~/.aliases'
+            _install_minos_setting "${package_dir}/etc##skel##.aliases"
+            _install_element_system_users '/etc/skel/.aliases' '~/.aliases'
             ;;
 
         vim)
-            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.vimrc'
-            _replace_file_on_system_users '/etc/skel/.vimrc' '~/.vimrc'
+            _install_minos_setting "${package_dir}/etc##skel##.vimrc"
+            _install_element_system_users '/etc/skel/.vimrc' '~/.vimrc'
 
-            if [ -d /usr/share/minos/cache/vim/bundle/vundle/.git/ ]; then
-                (cd /usr/share/minos/cache/vim/bundle/vundle && git pull)  >/dev/null 2>&1
+            if [ -d "${package_dir}/cache/vim/bundle/vundle/.git/" ]; then
+                (cd "${package_dir}/cache/vim/bundle/vundle" && git pull)  >/dev/null 2>&1
             else
-                busybox rm -rf /usr/share/minos/cache/vim
+                busybox rm -rf "${package_dir}/cache/vim"
                 #git clone --depth=1 "https://github.com/chilicuil/vundle" \
                 git clone --depth=1 https://git::@github.com/chilicuil/vundle.git \
-                    /usr/share/minos/cache/vim/bundle/vundle/ >/dev/null
+                    "${package_dir}/cache/vim/bundle/vundle/" >/dev/null
             fi
 
-            if [ -d /usr/share/minos/cache/vim/bundle/vundle/.git/ ]; then
+            if [ -d "${package_dir}/cache/vim/bundle/vundle/.git/" ]; then
                 busybox rm -rf   /etc/skel/.vim
                 busybox mkdir -p /etc/skel/.vim/bundle
-                busybox cp -rL   /usr/share/minos/cache/vim/bundle/vundle/ /etc/skel/.vim/bundle/
+                busybox cp -rL   "${package_dir}/cache/vim/bundle/vundle/" /etc/skel/.vim/bundle/
 
                 for user in ${users}; do
                     su "${user}" -c "test -f ~/.minos/not_override" && continue
                     su "${user}" -c "busybox mkdir -p ~/.vim/bundle/"
                     su "${user}" -c "test -d ~/.vim/bundle/vundle/" || \
                         su "${user}" -c "busybox cp -rL /etc/skel/.vim/bundle/vundle ~/.vim/bundle/vundle"
+                    printf "%s\\n" "${package}: installing ${user}'s vim plugins"
                     su "${user}" -c "vim -es -u ~/.vimrc -c \"BundleInstall\" -c qa" >/dev/null 2>&1
                     #su "${user}" -c "vim +BundleInstall +qall" >/dev/null 2>&1
                 done
@@ -511,55 +533,58 @@ _enable_setting() {
             ;;
 
         tmux)
-            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.tmux.conf'
-            _replace_file_on_system_users '/etc/skel/.tmux.conf' '~/.tmux.conf'
+            _install_minos_setting "${package_dir}/etc##skel##.tmux.conf"
+            _install_element_system_users '/etc/skel/.tmux.conf' '~/.tmux.conf'
 
-            if [ -d /usr/share/minos/cache/tmux/plugins/tundle/.git/ ]; then
-                (cd /usr/share/minos/cache/tmux/plugins/tundle && git pull) >/dev/null 2>&1
+            if [ -d "${package_dir}/cache/tmux/plugins/tundle/.git/" ]; then
+                (cd "${package_dir}/cache/tmux/plugins/tundle" && git pull) >/dev/null 2>&1
             else
-                busybox rm -rf /usr/share/minos/cache/tmux
+                busybox rm -rf "${package_dir}/cache/tmux"
                 git clone --depth=1 "https://github.com/chilicuil/tundle" \
-                    "/usr/share/minos/cache/tmux/plugins/tundle" >/dev/null
+                    "${package_dir}/cache/tmux/plugins/tundle" >/dev/null
             fi
 
-            if [ -d /usr/share/minos/cache/tmux/plugins/tundle/.git/ ]; then
+            if [ -d "${package_dir}/cache/tmux/plugins/tundle/.git/" ]; then
                 busybox rm -rf   /etc/skel/.tmux
                 busybox mkdir -p /etc/skel/.tmux/plugins
-                busybox cp -rL   /usr/share/minos/cache/tmux/plugins/tundle /etc/skel/.tmux/plugins/
+                busybox cp -rL   "${package_dir}/cache/tmux/plugins/tundle" /etc/skel/.tmux/plugins/
                 for user in ${users}; do
                     su "${user}" -c "test -f ~/.minos/not_override" && continue
                     su "${user}" -c "busybox mkdir -p ~/.tmux/plugins/" > /dev/null 2>&1
                     su "${user}" -c "test -d ~/.tmux/plugins/tundle/" || \
                         su "${user}" -c "busybox cp -rL /etc/skel/.tmux/plugins/tundle ~/.tmux/plugins/tundle"
+                    printf "%s\\n" "${package}: installing ${user}'s tmux plugins"
                     su "${user}" -c "sh ~/.tmux/plugins/tundle/scripts/install_plugins.sh" >/dev/null 2>&1
                 done
             fi
             ;;
 
         shundle)
-            _install_minos_setting '/usr/share/minos/core-settings/etc##skel##.profile.d##shundle.sh'
-
+            _install_minos_setting "${package_dir}/etc##skel##.profile.d##shundle.sh"
             for user in ${users}; do
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
                 su "${user}" -c "busybox mkdir ~/.profile.d" >/dev/null 2>&1
             done
-            _replace_file_on_system_users '/etc/skel/.profile.d/shundle.sh' '~/.profile.d/shundle.sh'
+            _install_element_system_users '/etc/skel/.profile.d/shundle.sh' '~/.profile.d/shundle.sh'
 
-            if [ -d /usr/share/minos/cache/shundle/bundle/shundle/.git/ ]; then
-                (cd /usr/share/minos/cache/shundle/bundle/shundle && git pull) > /dev/null 2>&1
+            if [ -d "${package_dir}/cache/shundle/bundle/shundle/.git/" ]; then
+                (cd "${package_dir}/cache/shundle/bundle/shundle" && git pull) > /dev/null 2>&1
             else
-                busybox rm -rf /usr/share/minos/cache/shundle
+                busybox rm -rf "${package_dir}/cache/shundle"
                 git clone --depth=1 "https://github.com/chilicuil/shundle" \
-                    "/usr/share/minos/cache/shundle/bundle/shundle" >/dev/null
+                    "${package_dir}/cache/shundle/bundle/shundle" >/dev/null
             fi
 
-            if [ -d /usr/share/minos/cache/shundle/bundle/shundle/.git/ ]; then
+            if [ -d "${package_dir}/cache/shundle/bundle/shundle/.git/" ]; then
                 busybox rm -rf /etc/skel/.shundle
-                busybox cp -rL /usr/share/minos/cache/shundle/ /etc/skel/.shundle
-                _replace_file_on_system_users '/etc/skel/.shundle' '~/.shundle'
+                busybox cp -rL "${package_dir}/cache/shundle/" /etc/skel/.shundle
 
                 for user in ${users}; do
                     su "${user}" -c "test -f ~/.minos/not_override" && continue
+                    su "${user}" -c "busybox mkdir -p ~/.shundle/bundle/" > /dev/null 2>&1
+                    su "${user}" -c "test -d ~/.shundle/bundle/shundle/" || \
+                        su "${user}" -c "busybox cp -rL /etc/skel/.shundle/bundle/shundle ~/.shundle/bundle/shundle"
+                    printf "%s\\n" "${package}: installing ${user}'s shundle plugins"
                     su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.bashrc \
                         ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
                     su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.profile.d/shundle.sh \
@@ -618,18 +643,18 @@ _disable_setting() {
             rm -rf /etc/apt/apt.conf.d/05disable-suggests
             ;;
 
-        sudo) busybox rm -rf /etc/sudoers.d/minos-core ;;
-        ssh) _undiverge_element /etc/ssh/ssh_config '/usr/share/minos/core-settings/etc##ssh##ssh_config' ;;
-        git) _undiverge_element /etc/gitconfig '/usr/share/minos/core-settings/etc##gitconfig' ;;
+        sudo) _uninstall_minos_setting "${package_dir}/etc##sudoers.d##minos-core" ;;
+        ssh) _undiverge_element /etc/ssh/ssh_config "${package_dir}/etc##ssh##ssh_config" ;;
+        git) _undiverge_element /etc/gitconfig "${package_dir}/etc##gitconfig" ;;
 
         motd)
-            _undiverge_element /etc/issue     '/usr/share/minos/core-settings/etc##issue'
-            _undiverge_element /etc/issue.net '/usr/share/minos/core-settings/etc##issue.net'
-            _undiverge_element /etc/legal     '/usr/share/minos/core-settings/etc##legal'
-            _undiverge_element /etc/update-motd.d/00-header    '/usr/share/minos/core-settings/etc##update-motd.d##00-header'
-            _undiverge_element /etc/update-motd.d/10-help-text '/usr/share/minos/core-settings/etc##update-motd.d##10-help-text'
+            _undiverge_element /etc/issue     "${package_dir}/etc##issue"
+            _undiverge_element /etc/issue.net "${package_dir}/etc##issue.net"
+            _undiverge_element /etc/legal     "${package_dir}/etc##legal"
+            _undiverge_element /etc/update-motd.d/00-header    "${package_dir}/etc##update-motd.d##00-header"
+            _undiverge_element /etc/update-motd.d/10-help-text "${package_dir}/etc##update-motd.d##10-help-text"
 
-            rm -rf /etc/update-motd.d/10-minos-sysinfo
+            _uninstall_minos_setting "${package_dir}/etc##update-motd.d##10-minos-sysinfo"
             ;;
 
         tmpfs)
@@ -637,11 +662,11 @@ _disable_setting() {
             ;;
 
         locales) : ;;
-        minos-bash) busybox rm -rf /etc/profile.d/minos-bash.sh ;;
+        minos-bash) _uninstall_minos_setting "${package_dir}/etc##profile.d##minos-bash.sh" ;;
 
         bash-profile)
-            busybox rm -rf /etc/skel/.bash_profile
-            _recover_file_on_system_users '~/.bash_profile'
+            _uninstall_element_system_users /etc/skel/.bash_profile '~/.bash_profile'
+            _uninstall_minos_setting "${package_dir}/etc##skel##.bash_profile"
             ;;
 
         app-core|app-purge) : ;; #what would be the reverse process?
@@ -678,7 +703,7 @@ _disable_setting() {
 
                     if [ -e "${h}"/"${bdotfile}" ]; then
                         printf "%s\\n" "${package}: old $user's ~/.${bdotfile} archive found, recovering last state"
-                        _recover_file_on_system_users "${bdotfile}"
+                        _uninstall_element_system_users "${dotfile}" "${bdotfile}"
                     fi
 
                 done; busybox rm -rf /tmp/"${package}"/
@@ -686,26 +711,34 @@ _disable_setting() {
             ;;
 
        aliases)
-            busybox rm -rf /etc/skel/.aliases
-            _recover_file_on_system_users '~/.aliases'
+            _uninstall_element_system_users '/etc/skel/.aliases' '~/.aliases'
+            _uninstall_minos_setting "${package_dir}/etc##skel##.aliases"
             ;;
 
         vim)
+            _uninstall_element_system_users '/etc/skel/.vimrc' '~/.vimrc'
+            _uninstall_minos_setting "${package_dir}/etc##skel##.vimrc"
             busybox rm -rf /etc/skel/.vim/bundle/vundle
-            busybox rmdir  /etc/skel/.vim/bundle/
-            busybox rmdir  /etc/skel/.vim/
+            busybox rmdir  /etc/skel/.vim/bundle/ 2>/dev/null
+            busybox rmdir  /etc/skel/.vim/        2>/dev/null
             ;;
 
         tmux)
+            _uninstall_element_system_users '/etc/skel/.tmux.conf' '~/.tmux.conf'
+            _uninstall_minos_setting "${package_dir}/etc##skel##.tmux.conf"
             busybox rm -rf /etc/skel/.tmux/plugins/tundle
-            busybox rmdir  /etc/skel/.tmux/plugins/
-            busybox rmdir  /etc/skel/.tmux/
+            busybox rmdir  /etc/skel/.tmux/plugins/ 2>/dev/null
+            busybox rmdir  /etc/skel/.tmux          2>/dev/null
             ;;
 
         shundle)
+            _uninstall_element_system_users '/etc/skel/.profile.d/shundle.sh' '~/.profile.d/shundle.sh'
+            _uninstall_element_system_users '/etc/skel/.shundle' '~/.shundle'
+            _uninstall_minos_setting "${package_dir}/etc##skel##.profile.d##shundle.sh"
+
             busybox rm -rf /etc/skel/.shundle/bundle/shundle
-            busybox rmdir  /etc/skel/.shundle/bundle/
-            busybox rmdir  /etc/skel/.shundle/
+            busybox rmdir  /etc/skel/.shundle/bundle/ 2>/dev/null
+            busybox rmdir  /etc/skel/.shundle/        2>/dev/null
             ;;
 
         hooks) : ;;
@@ -714,7 +747,7 @@ _disable_setting() {
 
 case "${1}" in
     configure)
-        if [ "$DEBCONFEXISTS" = "true" ]; then
+        if [ "${DEBCONFEXISTS}" = "true" ]; then
             #get user settings
             db_get "${package}"/settings
             settings="${RET}"
@@ -741,8 +774,23 @@ case "${1}" in
         #leave apt daemon running behind to install/remove additional software
         _apt_daemon
         ;;
-    abort-upgrade|abort-deconfigure|abort-remove)
+
+    remove) #abusing postinst to avoid repeating code in prerm
+        if [ "${DEBCONFEXISTS}" = "true" ]; then
+            #get default settings
+            db_metaget "${package}"/settings Choices
+            default_settings="${RET}"
+        fi
+
+        #enable selected items
+        for setting in ${default_settings}; do
+            setting="${setting%,*}" #remove ',' from tail
+            _disable_setting "${setting}"
+        done
         ;;
+
+    abort-upgrade|abort-deconfigure|abort-remove) : ;;
+
     *)
         printf "%s\\n" "${0} called with unknown argument \`${1}'" 1>&2
         exit 1

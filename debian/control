@@ -11,8 +11,8 @@ Vcs-Browser: https://github.com/minos-org/minos-core-settings-deb.git
 Package: minos-core-settings
 Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, debconf, login, busybox-static, git
-#                                               login => because of /bin/su
-Recommends: wget, bash-minos-settings, minos-tools-extra
+#                                                     login => because of /bin/su
+Recommends: bash-minos-settings, minos-tools-extra
 Description: Minos core settings
  This package provides the minimal settings which gives to minos its identity.
  It's intend to be installed in all environments, even on those where X is not

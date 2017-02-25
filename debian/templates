@@ -5,38 +5,40 @@ Default: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, 
 Description: Select the settings to be applied.
  Minos default behavor requires additional settings to fullfill the minos
  experience, all add-ons can be enabled or disabled by marking the
- following list
+ following list.
  .
- sudo: turn on sudo insults, disable tty tickets, set a longer (1hr) timeout,
- define group session to bypass passwords authentication for hibernate/shutdown
- (Recommended)
+ [*] sudo: turn on sudo insults, disable tty tickets, set a longer (1hr)
+ timeout, define group session to bypass passwords authentication for
+ hibernate/shutdown (Recommended)
  .
     - /etc/sudoers.d/minos
  .
- ssh: connection sharing, better performance and general resiliance to network
- failures (Recommended)
+ [*] ssh: connection sharing, better performance and general resiliance to
+ network failures (Recommended)
  .
     - /etc/ssh/ssh_config
  .
- tmpfs: mount /tmp as tmpfs in RAM (Recommended)
+ [*] tmpfs: mount /tmp as tmpfs in RAM (Recommended)
  .
     - /etc/fstab
  .
- locales: fix locales when none has been set (default to EN_US) (Recommended)
+ [*] locales: fix locales when none has been set (default to EN_US)
+ (Recommended)
  .
     - /etc/default/locale
     - https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794
  .
- minos-bash: turn on global advanced bash settings and 'vi' mode, (Recommended)
+ [*] minos-bash: turn on global advanced bash settings and 'vi' mode,
+ (Recommended)
  .
     -/etc/profile.d/minos-bash.sh
  .
- bash-profile: add local gpg-agent and tmux autolaunchers on incomming ssh
+ [*] bash-profile: add local gpg-agent and tmux autolaunchers on incomming ssh
  connection (Recommended)
  .
     - /etc/skel/.bash_profile
  .
- motd: modify message of the day and other personality files (Optional)
+ [*] motd: modify message of the day and other personality files (Optional)
  .
     - /etc/issue
     - /etc/issue.net
@@ -44,60 +46,59 @@ Description: Select the settings to be applied.
     - /etc/update-motd.d/00-header
     - /etc/update-motd.d/10-help-text
  .
- kernel: change swappiness for better general performance, ignore most kernel
- warnings (Optional)
+ [*] kernel: change swappiness for better general performance, ignore most
+ kernel warnings (Optional)
  .
     - /etc/sysctl.conf
  .
- apt: disable recommends/suggest packages (Optional)
+ [*] apt: disable recommends/suggest packages (Optional)
  .
     - /etc/apt/apt.conf.d/05disable-recommends
     - /etc/apt/apt.conf.d/05disable-suggests
  .
- git: git aliases and default theme (Optional)
+ [*] git: git aliases and default theme (Optional)
  .
     - /etc/gitconfig
  .
- app-core: install additional apt packages (Experimental)
-  Eg, ~/.minos/config
-  app-core emacs aria2 curl
+ [*] app-core: install additional apt packages (Experimental)
+     Eg, ~/.minos/config
+     app-core emacs aria2 curl
  .
- app-purge: remove apt packages (Experimental)
-  Eg, ~/.minos/config
-  app-purge xinetd sasl2-bin sendmail sendmail-base sendmail-bin sensible-mda
+ [*] app-purge: remove apt packages (Experimental)
+     Eg, ~/.minos/config
+     app-purge xinetd sasl2-bin sendmail sendmail-base sendmail-bin sensible-mda
  .
- dotfiles: install remote dotfiles on every user home directory (Optional)
-  Eg, ~/.minos/config:
-  dotfiles https://github.com/user/dotfiles
+ [*] dotfiles: install remote dotfiles on every user home directory (Optional)
+     Eg, ~/.minos/config:
+     dotfiles https://github.com/user/dotfiles
  .
- aliases: replace cd, rm and other system applications with minos wrappers for
- improved behavior. (Recommended)
+ [*] aliases: replace cd, rm and other system applications with minos wrappers
+     for improved behavior. (Recommended)
  .
     - /etc/skel/.aliases
  .
- vim: setup vim with vundle, a modern plugin manager (Optional)
+ [*] vim: setup vim with vundle, a modern plugin manager (Optional)
  .
     - https://github.com/chilicuil/vundle
     - $HOME/.vimrc
  .
- tmux: setup tmux with tundle, a modern plugin manager (Optional)
+ [*] tmux: setup tmux with tundle, a modern plugin manager (Optional)
  .
     - https://github.com/chilicuil/tundle
     - $HOME/.tmux.conf
  .
- shundle: setup the interactive shell with shundle, a modern plugin manager.
- (Optional)
+ [*] shundle: setup the interactive shell with shundle, a modern plugin
+ manager. (Optional)
  .
     - https://github.com/chilicuil/shundle
     - /etc/skel/.profile.d/shundle.sh
     - $HOME/.shundle/
  .
- hooks: execute a hook script for every user. The script is called with
- a 'core' parameter and runs as root when defined in /etc/minos/config,
- otherwise as $user for every user who had define it in ~/.minos/config
- (Optional)
-  Eg, ~/.minos/config:
-  hook http://domain.tld/hook
+ [*] hooks: execute a hook script for every user. The script is called with a
+ 'core' parameter and runs as root when defined in /etc/minos/config, otherwise
+  as $user for every user who had define it in ~/.minos/config (Optional)
+     Eg, ~/.minos/config:
+     hook http://domain.tld/hook
  .
  If a $HOME/.minos/not_override file exists modules will not alter files on
  that user directory.
