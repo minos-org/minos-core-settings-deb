@@ -609,8 +609,8 @@ _enable_setting() {
                 (cd "${package_dir}/cache/vim/bundle/vundle" && git pull)  >/dev/null 2>&1
             else
                 busybox rm -rf "${package_dir}/cache/vim"
-                #git clone --depth=1 "https://github.com/chilicuil/vundle" \
-                git clone --depth=1 https://git::@github.com/chilicuil/vundle.git \
+                #git clone --depth=1 "https://github.com/javier-lopez/vundle" \
+                git clone --depth=1 https://git::@github.com/javier-lopez/vundle.git \
                     "${package_dir}/cache/vim/bundle/vundle/" >/dev/null
             fi
 
@@ -639,7 +639,7 @@ _enable_setting() {
                 (cd "${package_dir}/cache/tmux/plugins/tundle" && git pull) >/dev/null 2>&1
             else
                 busybox rm -rf "${package_dir}/cache/tmux"
-                git clone --depth=1 "https://github.com/chilicuil/tundle" \
+                git clone --depth=1 "https://github.com/javier-lopez/tundle" \
                     "${package_dir}/cache/tmux/plugins/tundle" >/dev/null
             fi
 
@@ -670,7 +670,7 @@ _enable_setting() {
                 (cd "${package_dir}/cache/shundle/bundle/shundle" && git pull) > /dev/null 2>&1
             else
                 busybox rm -rf "${package_dir}/cache/shundle"
-                git clone --depth=1 "https://github.com/chilicuil/shundle" \
+                git clone --depth=1 "https://github.com/javier-lopez/shundle" \
                     "${package_dir}/cache/shundle/bundle/shundle" >/dev/null
             fi
 

@@ -4,11 +4,11 @@ Upstream-Contact: https://github.com/minos-org/minos-core-settings
 Source: https://github.com/minos-org/minos-core-settings/archive/master.zip
 
 Files: *
-Copyright: Copyright (c) 2015, Javier P.L. <chilicuil@ubuntu.com>
+Copyright: Copyright (c) 2015, Javier López <m@javier.io>
 License: GPL-3
 
 Files: debian/*
-Copyright: Copyright (c) 2015, Javier P.L. <chilicuil@ubuntu.com>
+Copyright: Copyright (c) 2015, Javier López <m@javier.io>
 License: GPL-3
 
 License: GPL-3

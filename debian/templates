@@ -79,18 +79,18 @@ Description: Select the settings to be applied.
  .
  [*] vim: setup vim with vundle, a modern plugin manager (Optional)
  .
-    - https://github.com/chilicuil/vundle
+    - https://github.com/javier-lopez/vundle
     - $HOME/.vimrc
  .
  [*] tmux: setup tmux with tundle, a modern plugin manager (Optional)
  .
-    - https://github.com/chilicuil/tundle
+    - https://github.com/javier-lopez/tundle
     - $HOME/.tmux.conf
  .
  [*] shundle: setup the interactive shell with shundle, a modern plugin
  manager. (Optional)
  .
-    - https://github.com/chilicuil/shundle
+    - https://github.com/javier-lopez/shundle
     - /etc/skel/.profile.d/shundle.sh
     - $HOME/.shundle/
  .
