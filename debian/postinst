@@ -846,6 +846,9 @@ _disable_setting() {
 
 case "${1}" in
     configure)
+        #bugs, bugs everywhere: https://github.com/gitpython-developers/GitPython/issues/295
+        chmod -x /usr/lib/git-core/git-credential-cache--daemon || :
+
         if [ "${DEBCONFEXISTS}" = "true" ]; then
             #get user settings
             db_get "${package}"/settings
@@ -872,6 +875,8 @@ case "${1}" in
 
         #apply apt/dpkg changes
         _apt_run
+
+        chmod +x /usr/lib/git-core/git-credential-cache--daemon || :
         ;;
 
     remove) #abusing postinst to avoid repeating code in prerm
