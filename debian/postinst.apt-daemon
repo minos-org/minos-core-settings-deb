@@ -381,6 +381,10 @@ _enable_setting() {
             #https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794
             if [ ! -f /etc/default/locale ]; then
                 printf "%s\\n%s\\n" 'LANG="en_US.UTF-8"' 'LANGUAGE="en_US:en"' > /etc/default/locale
+            else
+                if ! busybox grep "LANG=" /etc/default/locale | busybox grep "UTF-8" >/dev/null; then
+                    busybox sed -i -e "/LANG=/ s:\"$:.UTF-8\":" /etc/default/locale
+                fi
             fi
             ;;
 
