@@ -502,55 +502,55 @@ _enable_setting() {
             _install_element_system_users '/etc/skel/.bash_profile' '~/.bash_profile'
             ;;
 
-        app-core)
-            for user in ${users}; do
-                su "${user}" -c "busybox id | busybox grep '(sudo)\|(admin)\|(wheel)'" >/dev/null 2>&1 || continue
-                h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
+        #app-core)
+            #for user in ${users}; do
+                #su "${user}" -c "busybox id | busybox grep '(sudo)\|(admin)\|(wheel)'" >/dev/null 2>&1 || continue
+                #h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
 
-                userpkgs="$(busybox awk -v pattern="^app-core"       \
-                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                    "${h}"/.minos/config 2>/dev/null)"
+                #userpkgs="$(busybox awk -v pattern="^app-core"       \
+                    #'$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    #"${h}"/.minos/config 2>/dev/null)"
 
-                [ -z "${userpkgs}" ] && continue
+                #[ -z "${userpkgs}" ] && continue
 
-                printf "%s\\n" "${package}: adding to the apt queue, ${user}'s defined pkgs: ${userpkgs} ..."
-                _apt_install ${userpkgs}
-            done
+                #printf "%s\\n" "${package}: adding to the apt queue, ${user}'s defined pkgs: ${userpkgs} ..."
+                #_apt_install ${userpkgs}
+            #done
 
-            globalpkgs="$(busybox awk -v pattern="^app-core"         \
-                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                     /etc/minos/config 2>/dev/null)"
+            #globalpkgs="$(busybox awk -v pattern="^app-core"         \
+                    #'$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                     #/etc/minos/config 2>/dev/null)"
 
-            if [ -n "${globalpkgs}" ]; then
-                printf "%s\\n" "${package}: adding to the apt queue, system defined pkgs: ${globalpkgs} ..."
-                _apt_install ${globalpkgs}
-            fi
-            ;;
+            #if [ -n "${globalpkgs}" ]; then
+                #printf "%s\\n" "${package}: adding to the apt queue, system defined pkgs: ${globalpkgs} ..."
+                #_apt_install ${globalpkgs}
+            #fi
+            #;;
 
-        app-purge)
-            for user in ${users}; do
-                su "${user}" -c "busybox id | busybox grep '(sudo)\|(admin)\|(wheel)'" >/dev/null 2>&1 || continue
-                h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
+        #app-purge)
+            #for user in ${users}; do
+                #su "${user}" -c "busybox id | busybox grep '(sudo)\|(admin)\|(wheel)'" >/dev/null 2>&1 || continue
+                #h="$(su "${user}" -c "echo ~" 2>/dev/null)" || continue
 
-                rm_userpkgs="$(busybox awk -v pattern="^app-purge"   \
-                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                    "${h}/.minos/config" 2>/dev/null)"
+                #rm_userpkgs="$(busybox awk -v pattern="^app-purge"   \
+                    #'$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                    #"${h}/.minos/config" 2>/dev/null)"
 
-                [ -z "${rm_userpkgs}" ] && continue
+                #[ -z "${rm_userpkgs}" ] && continue
 
-                printf "%s\\n" "${package}: removing from the apt queue, ${user}'s defined pkgs: ${rm_userpkgs} ..."
-                _apt_purge ${rm_userpkgs}
-            done
+                #printf "%s\\n" "${package}: removing from the apt queue, ${user}'s defined pkgs: ${rm_userpkgs} ..."
+                #_apt_purge ${rm_userpkgs}
+            #done
 
-            rm_globalpkgs="$(busybox awk -v pattern="^app-purge"     \
-                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                     /etc/minos/config 2>/dev/null)"
+            #rm_globalpkgs="$(busybox awk -v pattern="^app-purge"     \
+                    #'$0 ~ pattern {$1=""; print substr($0,2); exit}' \
+                     #/etc/minos/config 2>/dev/null)"
 
-            if [ -n "${rm_globalpkgs}" ]; then
-                printf "%s\\n" "${package}: removing from the apt queue, system defined pkgs: ${rm_globalpkgs} ..."
-                _apt_purge ${rm_globalpkgs}
-            fi
-            ;;
+            #if [ -n "${rm_globalpkgs}" ]; then
+                #printf "%s\\n" "${package}: removing from the apt queue, system defined pkgs: ${rm_globalpkgs} ..."
+                #_apt_purge ${rm_globalpkgs}
+            #fi
+            #;;
 
          dotfiles)
             for user in ${users}; do
@@ -782,7 +782,7 @@ _disable_setting() {
             _uninstall_minos_setting "${package_dir}/etc##skel##.bash_profile"
             ;;
 
-        app-core|app-purge) : ;; #what would be the reverse process?
+        #app-core|app-purge) : ;; #what would be the reverse process?
 
         dotfiles)
             for user in ${users}; do
@@ -888,7 +888,7 @@ case "${1}" in
         done
 
         #apply apt/dpkg changes
-        _apt_run
+        #_apt_run
 
         chmod +x /usr/lib/git-core/git-credential-cache--daemon || :
         ;;

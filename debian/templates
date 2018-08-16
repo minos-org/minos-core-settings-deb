@@ -1,7 +1,7 @@
 Template: minos-core-settings/settings
 Type: multiselect
-Choices: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
-Default: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, app-core, app-purge, dotfiles, aliases, vim, tmux, shundle, hooks
+Choices: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
+Default: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
 Description: Select the settings to be applied.
  Minos default behavor requires additional settings to fullfill the minos
  experience, all add-ons can be enabled or disabled by marking the
@@ -59,14 +59,6 @@ Description: Select the settings to be applied.
  [*] git: git aliases and default theme (Optional)
  .
     - /etc/gitconfig
- .
- [*] app-core: install additional apt packages (Experimental)
-     Eg, ~/.minos/config
-     app-core emacs aria2 curl
- .
- [*] app-purge: remove apt packages (Experimental)
-     Eg, ~/.minos/config
-     app-purge xinetd sasl2-bin sendmail sendmail-base sendmail-bin sensible-mda
  .
  [*] dotfiles: install remote dotfiles on every user home directory (Optional)
      Eg, ~/.minos/config:
