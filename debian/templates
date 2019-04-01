@@ -1,7 +1,7 @@
 Template: minos-core-settings/settings
 Type: multiselect
-Choices: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
-Default: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
+Choices: kernel, disable_ipv6, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
+Default: kernel, disable_ipv6, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
 Description: Select the settings to be applied.
  Minos default behavor requires additional settings to fullfill the minos
  experience, all add-ons can be enabled or disabled by marking the
@@ -49,7 +49,11 @@ Description: Select the settings to be applied.
  [*] kernel: change swappiness for better general performance, ignore most
  kernel warnings (Optional)
  .
-    - /etc/sysctl.conf
+    - /etc/sysctl.d/99*
+ .
+ [*] disable_ipv6: Disable IPv6 routing operations. (Optional)
+ .
+    - /etc/sysctl.d/99-disable-ipv6.conf
  .
  [*] apt: disable recommends/suggest packages (Optional)
  .

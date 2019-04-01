@@ -441,8 +441,12 @@ _apt_run() {
 _enable_setting() {
     case "${1}" in
         kernel)
-            _ensure_setting_is_set "vm.swappiness = 10"      /etc/sysctl.conf
-            _ensure_setting_is_set "kernel.printk = 4 4 1 7" /etc/sysctl.conf
+            _install_minos_setting "${package_dir}/etc##sysctl.d##99-swappiness.conf"
+            _install_minos_setting "${package_dir}/etc##sysctl.d##99-printk.conf"
+            ;;
+
+        disable-ipv6)
+            _install_minos_setting "${package_dir}/etc##sysctl.d##99-disable-ipv6.conf"
             ;;
 
         apt)
@@ -742,8 +746,12 @@ _enable_setting() {
 _disable_setting() {
     case "${1}" in
         kernel)
-            busybox sed -i "/^vm.swappiness = 10/d"      /etc/sysctl.conf
-            busybox sed -i "/^kernel.printk = 4 4 1 7/d" /etc/sysctl.conf
+            _uninstall_minos_setting "${package_dir}/etc##sysctl.d##99-swappiness.conf"
+            _uninstall_minos_setting "${package_dir}/etc##sysctl.d##99-printk.conf"
+            ;;
+
+        disable-ipv6)
+            _uninstall_minos_setting "${package_dir}/etc##sysctl.d##99-disable-ipv6.conf"
             ;;
 
         apt)
