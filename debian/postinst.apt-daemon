@@ -10,16 +10,6 @@ else
     export DEBCONFEXISTS
 fi
 
-#close stdout
-#exec 1<&-
-##close stderr
-#exec 2<&-
-##open stdout as $log_file file for read and write.
-#exec 1<> "/tmp/minos-core-settings.${$}.debug"
-##redirect stderr to stdout
-#exec 2>&1
-#set -x #enable trace mode
-
 package="minos-core-settings"
 package_dir="/usr/share/minos/core-settings"
 diverge_dir="${package_dir}/diverge"
@@ -471,10 +461,12 @@ _enable_setting() {
                 [ -z "${dotrepo}" ] && continue
 
                 bdotrepo="$(busybox basename "${dotrepo}")"
-                busybox mkdir -p /tmp/minos-core-setting
-                git clone --depth=1 "${dotrepo}" /tmp/minos-core-setting/"${bdotrepo}" >/dev/null
+                #cloned into a directory of mktemp's, root's alone: a fixed name in the shared
+                #temporary directory is one any user can create first, and then reach into
+                dottmp="$(busybox mktemp -d)" || continue
+                git clone --depth=1 "${dotrepo}" "${dottmp}/${bdotrepo}" >/dev/null
 
-                for dotfile in /tmp/minos-core-setting/"${bdotrepo}"/.*; do
+                for dotfile in "${dottmp}/${bdotrepo}"/.*; do
                     [ ! -e "${dotfile}" ] && continue
                     bdotfile="$(busybox basename "${dotfile}")"
 
@@ -503,7 +495,7 @@ _enable_setting() {
                     if [ -n "${old_ssh_conf}" ] && [ ! X"${old_ssh_conf}" = X"${h}"/.ssh ]; then
                         busybox cp -- "${old_ssh_conf}"/* "${h}"/.ssh/
                     fi
-                done; busybox rm -rf /tmp/minos-core-setting/
+                done; busybox rm -rf "${dottmp}"
             done
             ;;
 
@@ -703,10 +695,11 @@ _disable_setting() {
                 [ -z "${dotrepo}" ] && continue
 
                 bdotrepo="$(busybox basename "${dotrepo}")"
-                busybox mkdir -p /tmp/"${package}"
-                git clone --depth=1  "${dotrepo}" /tmp/"${package}/${bdotrepo}" >/dev/null
+                #cloned into a directory of mktemp's, root's alone (see the install side)
+                dottmp="$(busybox mktemp -d)" || continue
+                git clone --depth=1  "${dotrepo}" "${dottmp}/${bdotrepo}" >/dev/null
 
-                for dotfile in /tmp/"${package}/${bdotrepo}"/.*; do
+                for dotfile in "${dottmp}/${bdotrepo}"/.*; do
                     [ ! -e "${dotfile}" ] && continue
                     bdotfile="$(busybox basename "${dotfile}")"
 
@@ -720,7 +713,7 @@ _disable_setting() {
                         _uninstall_element_system_users "${dotfile}" "${bdotfile}"
                     fi
 
-                done; busybox rm -rf /tmp/"${package}"/
+                done; busybox rm -rf "${dottmp}"
             done
             ;;
 

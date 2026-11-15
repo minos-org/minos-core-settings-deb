@@ -1,0 +1,132 @@
+#!/bin/sh
+#put the dotfiles of the repository the user who runs it names in ~/.minos/config (dotfiles URL), or
+#of the one /etc/minos/config names for everyone, in that user's home: the part of the dotfiles module
+#of minos-core-settings that happens inside a home. The postinst runs it as each user, never as root,
+#so the clone and the copy reach only what that user reaches. Done by root they reached anything: root
+#cloned whatever a user named (a repository only root reads; a name that git takes for an option, such
+#as --upload-pack=COMMAND) and wrote into a home whose links that user sets
+#usage: user-dotfiles install     each dotfile of the repository that differs from the home's replaces
+#                                 it, which stays as FILE.minos-backup.DATE; a replaced ~/.ssh gives
+#                                 its files (the keys) to the new one
+#       user-dotfiles uninstall   each dotfile still as the repository has it gives way to its newest
+#                                 backup; one changed since, or with no backup, stays
+
+package="minos-core-settings"
+#the clone, removed however this script ends
+tmp=""
+
+#as in the postinst: nothing here needs the system git configuration, whose credential helper (cache)
+#would start a daemon holding what the caller holds open. Nor may git or ssh ask for anything: su -c
+#runs this in a session of its own, with no terminal, and a question would only wait or fail
+GIT_CONFIG_NOSYSTEM="1"; export GIT_CONFIG_NOSYSTEM
+GIT_TERMINAL_PROMPT="0"; export GIT_TERMINAL_PROMPT
+GIT_SSH_COMMAND="ssh -o BatchMode=yes"; export GIT_SSH_COMMAND
+
+_usage() {
+    printf "%s\\n" "usage: user-dotfiles install|uninstall"
+}
+
+_cleanup() {
+    [ -z "${tmp}" ] || busybox rm -rf "${tmp}"
+}
+
+_repository() { #=> the repository this user names, else the one the system names
+    for _repository__config in "${HOME}/.minos/config" /etc/minos/config; do
+        _repository__name="$(busybox awk '/^dotfiles/ {$1 = ""; print substr($0, 2); exit}' \
+            "${_repository__config}" 2>/dev/null)"
+        [ -n "${_repository__name}" ] || continue
+        printf "%s" "${_repository__name}"
+        return 0
+    done
+    return 1
+}
+
+_clone() { #$1 repository, $2 directory => its last commit there
+    #only the network transports: never file (a path, a bundle) nor ext and fd, which run a command.
+    #-- ends git's options, so a name that begins with a dash is a repository and never an option
+    #(--upload-pack=COMMAND runs COMMAND)
+    git -c protocol.allow=never -c protocol.https.allow=always -c protocol.git.allow=always \
+        -c protocol.ssh.allow=always clone --quiet --depth=1 -- "${1}" "${2}" </dev/null
+}
+
+_same() { #$1 the repository's dotfile, $2 the home's => whether they are the same, every byte read
+    #busybox diff exits 0 after saying it cannot open a file: a dotfile this user cannot read (or a
+    #link to one) would pass for unchanged, kept on install and removed on uninstall. Only a diff
+    #that says nothing at all finds them the same
+    _same__said="$(busybox diff -qr "${1}" "${2}" 2>&1)" && [ -z "${_same__said}" ]
+}
+
+_backups() { #$1 a dotfile in the home => its backups, newest last, by the date in their names
+    for _backups__file in "${1}".minos-backup.*; do
+        [ -e "${_backups__file}" ] || [ -L "${_backups__file}" ] || continue
+        #FILE.minos-backup.DD-MM-YYYY-HH:MM sorts as YYYYMMDDHHMM
+        printf "%s %s\\n" "$(printf "%s\\n" "${_backups__file##*.minos-backup.}" | \
+            busybox awk -F'[-:]' '{print $3 $2 $1 $4 $5}')" "${_backups__file}"
+    done | busybox sort | busybox cut -d' ' -f2-
+}
+
+_each_dotfile() { #$1 install|uninstall: the repository's dotfiles, from a clone of this user's own
+    _each_dotfile__repository="$(_repository)" || return 0
+    tmp="$(busybox mktemp -d)" || return 1
+    if ! _clone "${_each_dotfile__repository}" "${tmp}/repository"; then
+        printf "%s\\n" "${package}: $(id -un)'s dotfiles, ${_each_dotfile__repository}: cannot be cloned" >&2
+        return 1
+    fi
+
+    for _each_dotfile__file in "${tmp}/repository"/.*; do
+        _each_dotfile__name="${_each_dotfile__file##*/}"
+        case "${_each_dotfile__name}" in .|..) continue ;; esac
+        #a link to nothing is left out, as it always was
+        [ -e "${_each_dotfile__file}" ] || continue
+        "_${1}_dotfile" "${_each_dotfile__file}" "${HOME}/${_each_dotfile__name}"
+    done
+}
+
+_install_dotfile() { #$1 the repository's dotfile, $2 the home's
+    if [ -e "${2}" ] || [ -L "${2}" ]; then
+        _same "${1}" "${2}" && return 0
+        _install_dotfile__backup="${2}.minos-backup.$(busybox date +%d-%m-%Y-%H:%M)"
+        printf "%s\\n" "${package}: old $(id -un)'s ~/${2##*/} archive found, replacing and creating backup in ~/${_install_dotfile__backup##*/}"
+        busybox mv "${2}" "${_install_dotfile__backup}" || return 1
+    else
+        _install_dotfile__backup=""
+    fi
+    busybox cp -r "${1}" "${2}" || return 1
+
+    #special case, don't remove ssh keys
+    if [ X"${2##*/}" = X".ssh" ] && [ -d "${_install_dotfile__backup}" ]; then
+        busybox cp -- "${_install_dotfile__backup}"/* "${2}/"
+    fi
+}
+
+_uninstall_dotfile() { #$1 the repository's dotfile, $2 the home's
+    #special case, don't recover ssh keys
+    [ X"${2##*/}" = X".ssh" ] && return 0
+    [ -e "${2}" ] || [ -L "${2}" ] || return 0
+    #changed since it was copied: the user's now
+    _same "${1}" "${2}" || return 0
+    _uninstall_dotfile__backup="$(_backups "${2}" | busybox tail -n 1)"
+    [ -n "${_uninstall_dotfile__backup}" ] || return 0
+    printf "%s\\n" "${package}: old $(id -un)'s ~/${2##*/} archive found, recovering last state"
+    busybox rm -rf "${2}" && busybox mv "${_uninstall_dotfile__backup}" "${2}"
+}
+
+if [ -z "${HOME}" ] || [ ! -d "${HOME}" ]; then
+    printf "%s\\n" "user-dotfiles: no home to install into" >&2
+    exit 1
+fi
+#a home with this file is its owner's alone
+[ -f "${HOME}/.minos/not_override" ] && exit 0
+#the caller's directory is root's, and none of this user's business
+cd "${HOME}" || exit 1
+
+#leaving through exit, a signal too, runs the EXIT trap
+trap '_cleanup' EXIT
+trap 'exit 1' HUP INT TERM
+
+case "${1}" in
+    install|uninstall) _each_dotfile "${1}" ;;
+    *)                 _usage >&2; exit 1 ;;
+esac
+
+# vim: set ts=8 sw=4 tw=0 ft=sh :

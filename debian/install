@@ -1,2 +1,5 @@
 #!/usr/bin/dh-exec
 *##* /usr/share/minos/core-settings/
+debian/user-plugins /usr/share/minos/core-settings/
+debian/user-dotfiles /usr/share/minos/core-settings/
+debian/minos-user-plugins.sh /etc/profile.d/

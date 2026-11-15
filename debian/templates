@@ -1,13 +1,14 @@
 Template: minos-core-settings/settings
 Type: multiselect
-Choices: kernel, disable_ipv6, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
-Default: kernel, disable_ipv6, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
+Choices: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
+Default: kernel, apt, git, sudo, ssh, tmpfs, locales, minos-bash, bash-profile, motd, dotfiles, aliases, vim, tmux, shundle, hooks
 Description: Select the settings to be applied.
  Minos default behavor requires additional settings to fullfill the minos
  experience, all add-ons can be enabled or disabled by marking the
  following list.
  .
- [*] sudo: turn on sudo insults, disable tty tickets, set a longer (1hr)
+ [*] sudo: turn on sudo insults, share one credential between terminals (classic
+ sudo only, sudo-rs keeps one per terminal), set a longer (1hr)
  timeout, define group session to bypass passwords authentication for
  hibernate/shutdown (Recommended)
  .
@@ -22,7 +23,7 @@ Description: Select the settings to be applied.
  .
     - /etc/fstab
  .
- [*] locales: fix locales when none has been set (default to EN_US)
+ [*] locales: fix locales when none has been set (default to C.UTF-8)
  (Recommended)
  .
     - /etc/default/locale
@@ -50,10 +51,6 @@ Description: Select the settings to be applied.
  kernel warnings (Optional)
  .
     - /etc/sysctl.d/99*
- .
- [*] disable_ipv6: Disable IPv6 routing operations. (Optional)
- .
-    - /etc/sysctl.d/99-disable-ipv6.conf
  .
  [*] apt: disable recommends/suggest packages (Optional)
  .

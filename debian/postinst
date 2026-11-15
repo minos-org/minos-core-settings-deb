@@ -10,50 +10,97 @@ else
     export DEBCONFEXISTS
 fi
 
-#close stdout
-#exec 1<&-
-##close stderr
-#exec 2<&-
-##open stdout as $log_file file for read and write.
-#exec 1<> "/tmp/minos-core-settings.${$}.debug"
-##redirect stderr to stdout
-#exec 2>&1
-#set -x #enable trace mode
-
 package="minos-core-settings"
 package_dir="/usr/share/minos/core-settings"
+
+#the plugin managers clone with placeholder credentials in the url, so git
+#never asks for any. After a clone git hands them to the credential helper,
+#and the one minos sets in /etc/gitconfig (cache) answers by starting a daemon:
+#it inherits debconf's pipe and holds this package's configuration until its
+#timeout, an hour. Nothing here needs the system git configuration
+GIT_CONFIG_NOSYSTEM="1"; export GIT_CONFIG_NOSYSTEM
 diverge_dir="${package_dir}/diverge"
+#a user's vim, tmux and shundle plugins, installed by that user: here for the users there now,
+#from /etc/profile.d/minos-user-plugins.sh at the login of those who come later
+user_plugins="${package_dir}/user-plugins"
+#a user's dotfiles, cloned and copied by that user (the dotfiles module)
+user_dotfiles="${package_dir}/user-dotfiles"
 
 users="$(busybox cat /etc/passwd | busybox awk -F: '{if ($3 >= 1000 && $3 < 60000) print $1}')"
+
+_place_dpkg_new() { #file, where it goes, its package's name for it => FILE.dpkg-new, a conffile, follows it
+    #dpkg unpacks a conffile as .dpkg-new under the name it has then, and installs it when it configures
+    #the package, under the name it has by then: a divert added or removed in between (a new install
+    #configures this package before the ones it diverts) would leave it behind, never installed
+    [ -f "${1}.dpkg-new" ] || return 0
+    _place__owner="$(dpkg-query -S "${3}" 2>/dev/null | busybox grep -v '^diversion ' | busybox cut -d: -f1)"
+    if dpkg-query -W -f='${Status}\n' "${_place__owner}" 2>/dev/null | \
+        busybox grep -qE ' (installed|triggers-awaited|triggers-pending)$'; then
+        #configured already: dpkg passed over it, and it is the file the package shipped
+        [ -e "${2}" ] || [ -L "${2}" ] || busybox mv "${1}.dpkg-new" "${2}"
+    elif [ ! -e "${2}.dpkg-new" ]; then
+        busybox mv "${1}.dpkg-new" "${2}.dpkg-new"
+    fi
+}
 
 _diverge_element() {
     _diverge__orig="${1}"
     _diverge__new="${2}"
-    _diverge__backup="$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
+    _diverge__backup="${diverge_dir}/$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
 
     if ! LC_ALL=C dpkg-divert --list "${package}" | \
-        grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        grep -xFq "diversion of ${_diverge__orig} to ${_diverge__backup} by ${package}"; then
         #busybox grep don't support the -x flag in old releases
         busybox mkdir -p "${diverge_dir}"
         dpkg-divert --package "${package}" --rename --add \
-            --divert "${diverge_dir}/${_diverge__backup}" "${_diverge__orig}"
+            --divert "${_diverge__backup}" "${_diverge__orig}"
 
         busybox ln -s "${_diverge__new}" "${_diverge__orig}" || :
     fi
+    _place_dpkg_new "${_diverge__orig}" "${_diverge__backup}" "${_diverge__orig}"
 }
 
 _undiverge_element() {
     _diverge__orig="${1}"
-    _diverge__new="${2}"
-    _diverge__backup="$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
+    _diverge__backup="${diverge_dir}/$(printf "%s\\n" "${_diverge__orig}" | busybox sed 's:/:##:g')"
 
     if LC_ALL=C dpkg-divert --list "${package}" | \
-        grep -xFq "diversion of ${_diverge__orig} to ${diverge_dir}/${_diverge__backup} by ${package}"; then
+        grep -xFq "diversion of ${_diverge__orig} to ${_diverge__backup} by ${package}"; then
         #busybox grep don't support the -x flag in old releases
         busybox rm -rf "${_diverge__orig}"
-        dpkg-divert --package "${package}" --remove "${_diverge__orig}"
+        #--rename puts the package's file back in its place: dpkg up to 1.23 leaves it diverted without it
+        dpkg-divert --package "${package}" --rename --remove "${_diverge__orig}"
+        _place_dpkg_new "${_diverge__backup}" "${_diverge__orig}" "${_diverge__orig}"
         busybox rmdir "${diverge_dir}" 2>/dev/null || :
     fi
+    _place_dpkg_new "${_diverge__orig}" "${_diverge__orig}" "${_diverge__orig}"
+}
+
+_restore_undiverted() { #what lies in the diverge directory with no divert of this package over it goes back
+    #the diverts used to come off without --rename: turning a module off, upgrading and removing left the
+    #package's file in the diverge directory and nothing in its place
+    for _restore__file in "${diverge_dir}"/*; do
+        #a package may ship a link (desktop-file-utils' defaults.list, up to 22.04), whatever it points to
+        [ -f "${_restore__file}" ] || [ -L "${_restore__file}" ] || continue
+        _restore__name="$(busybox basename "${_restore__file}")"
+        _restore__orig="$(printf "%s\\n" "${_restore__name%.dpkg-new}" | busybox sed 's:##:/:g')"
+        LC_ALL=C dpkg-divert --list "${package}" | \
+            grep -xFq "diversion of ${_restore__orig} to ${diverge_dir}/${_restore__name%.dpkg-new} by ${package}" && continue
+        case "${_restore__name}" in
+            *.dpkg-new) _place_dpkg_new "${diverge_dir}/${_restore__name%.dpkg-new}" "${_restore__orig}" "${_restore__orig}" ;;
+            *)  case "$(busybox readlink "${_restore__orig}" 2>/dev/null)" in
+                    "${package_dir}"/*) busybox rm -f "${_restore__orig}" ;;
+                esac
+                if [ ! -e "${_restore__orig}" ] && [ ! -L "${_restore__orig}" ] && \
+                   [ -d "$(busybox dirname "${_restore__orig}")" ]; then
+                    busybox mv "${_restore__file}" "${_restore__orig}"
+                else
+                    printf "%s\\n" "${package}: ${_restore__orig} is there already, ${_restore__file} is left as it is"
+                fi
+                ;;
+        esac
+    done
+    busybox rmdir "${diverge_dir}" 2>/dev/null || :
 }
 
 _install_minos_setting() {
@@ -190,6 +237,18 @@ _ensure_setting_is_set() {
     fi
 }
 
+_rewrite_through_link() {
+    #edit file($1) with sed expression($2) in place: written through a link to it, never replacing the
+    #link with a file the way sed -i does (/etc/default/locale is a link to /etc/locale.conf from 24.04 on)
+    _rewrite_through_link__text="$(busybox sed -e "${2}" "${1}")" || return 1
+    printf "%s\\n" "${_rewrite_through_link__text}" > "${1}"
+}
+
+_locale_exists() {
+    #does libc have locale($1): setting it prints nothing on stderr
+    [ -n "${1}" ] && [ -z "$(LC_ALL="${1}" locale 2>&1 >/dev/null)" ]
+}
+
 _merge_settings() {
     [ -f "${1}" ] && [ -f "${2}" ] || return 1
     setting_file_origin="${1}"
@@ -246,16 +305,6 @@ _dpkg_sync_status_db() {
     _dpkg_sync_status_db_script_generator() {
         printf "%s\\n" "#!/bin/sh"
         printf "%s\\n" "#autogenerated by ${package}: $(date +%d-%m-%Y:%H:%M)"
-        printf "\\n"
-        printf "%s\\n" '##close stdout'
-        printf "%s\\n" '#exec 1<&-'
-        printf "%s\\n" '##close stderr'
-        printf "%s\\n" '#exec 2<&-'
-        printf "%s\\n" '##open stdout as $log_file file for read and write.'
-        printf "%s\\n" "#exec 1<> /tmp/${package}.\${$}.debug"
-        printf "%s\\n" '##redirect stderr to stdout'
-        printf "%s\\n" '#exec 2>&1'
-        printf "%s\\n" '#set -x #enable trace mode'
         printf "\\n"
         printf "%s\\n" "while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 1; done"
         printf "\\n"
@@ -445,10 +494,6 @@ _enable_setting() {
             _install_minos_setting "${package_dir}/etc##sysctl.d##99-printk.conf"
             ;;
 
-        disable-ipv6)
-            _install_minos_setting "${package_dir}/etc##sysctl.d##99-disable-ipv6.conf"
-            ;;
-
         apt)
             apt-config dump | grep '^APT::Install-Recommends "false";$' >/dev/null 2>&1 ||     \
                 _install_minos_setting "${package_dir}/etc##apt##apt.conf.d##05disable-recommends"
@@ -458,9 +503,25 @@ _enable_setting() {
             ;;
 
         sudo)
-            busybox sed -i "/^#includedir.*\/etc\/sudoers\.d$/d" /etc/sudoers
-            busybox sed -i -e "\$ a#includedir /etc/sudoers.d"   /etc/sudoers
+            #/etc/sudoers reads the directory through an include line at its end: #includedir up to
+            #sudo 1.9.0, @includedir from 1.9.1 on (22.04's own default). Both at once make sudo read
+            #the directory twice and define every alias in it twice, so a #includedir goes in only
+            #where there is no include line, and one minos added before goes away beside @includedir
+            if [ -f /etc/sudoers ]; then
+                if busybox grep -q '^@includedir[[:space:]]\{1,\}/etc/sudoers\.d[[:space:]]*$' /etc/sudoers; then
+                    busybox sed -i '/^#includedir[[:space:]]\{1,\}\/etc\/sudoers\.d[[:space:]]*$/d' /etc/sudoers
+                elif ! busybox grep -q '^#includedir[[:space:]]\{1,\}/etc/sudoers\.d[[:space:]]*$' /etc/sudoers; then
+                    busybox sed -i -e "\$ a#includedir /etc/sudoers.d" /etc/sudoers
+                fi
+            fi
             _install_minos_setting "${package_dir}/etc##sudoers.d##minos-core"
+            #one credential for every terminal is a setting of the classic sudo only: sudo-rs, the
+            #default from 25.10 on, keeps one per terminal always and would complain about the line
+            #on every call. Changing the sudo in use later means: dpkg-reconfigure minos-core-settings
+            case "$(sudo -V 2>/dev/null | busybox head -n 1)" in
+                "Sudo version"*) _install_minos_setting   "${package_dir}/etc##sudoers.d##minos-tty-tickets" ;;
+                *)               _uninstall_minos_setting "${package_dir}/etc##sudoers.d##minos-tty-tickets" ;;
+            esac
             ;;
 
         ssh) _diverge_element /etc/ssh/ssh_config "${package_dir}/etc##ssh##ssh_config" ;;
@@ -486,14 +547,26 @@ _enable_setting() {
         tmpfs) _ensure_setting_is_set "tmpfs /tmp tmpfs defaults,noatime,noexec,nosuid,nodev,size=10% 0 0" /etc/fstab ;;
 
         locales)
-            locale-gen en_US en_US.UTF-8 && locale-gen
-            #https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794
-            if [ ! -f /etc/default/locale ]; then
-                printf "%s\\n%s\\n" 'LANG="en_US.UTF-8"' 'LANGUAGE="en_US:en"' > /etc/default/locale
-            else
-                if ! busybox grep "LANG=" /etc/default/locale | busybox grep "UTF-8" >/dev/null; then
-                    busybox sed -i -e "/LANG=/ s:\"$:.UTF-8\":" /etc/default/locale
+            #the session takes LANG from /etc/default/locale (pam_env, see
+            #https://bugs.launchpad.net/ubuntu/+source/pam/+bug/155794). No LANG at all (no file, a link to a
+            #locale.conf nobody wrote, as 26.04 comes, a file without the line): C.UTF-8, which libc carries on
+            #every release, with no locales package and no locale-gen. No LANGUAGE with it: C.UTF-8 messages
+            #are the untranslated, English ones, so a list of languages to try adds nothing
+            if ! busybox grep "^LANG=" /etc/default/locale >/dev/null 2>&1; then
+                printf "%s\\n" 'LANG="C.UTF-8"' >> /etc/default/locale
+            elif ! busybox grep "^LANG=" /etc/default/locale | busybox grep -i -e "UTF-8" -e "UTF8" >/dev/null; then
+                _rewrite_through_link /etc/default/locale "/^LANG=/ s:\"$:.UTF-8\":"
+            fi
+            #a LANG libc does not have is built with locale-gen when the locales package is there; when it
+            #is not, or the name cannot be built, every program would fall back to ASCII (a UTF-8 prompt
+            #drawn as Latin-1), so the LANG becomes C.UTF-8
+            _enable_setting__lang="$(busybox sed -n -e 's/^LANG=//p' /etc/default/locale | busybox tr -d '"' | busybox tail -n 1)"
+            if ! _locale_exists "${_enable_setting__lang}"; then
+                if command -v locale-gen >/dev/null 2>&1; then
+                    locale-gen "${_enable_setting__lang}" || :
                 fi
+                _locale_exists "${_enable_setting__lang}" || \
+                    _rewrite_through_link /etc/default/locale 's:^LANG=.*:LANG="C.UTF-8":'
             fi
             ;;
 
@@ -557,56 +630,15 @@ _enable_setting() {
             #;;
 
          dotfiles)
+            #each user clones the repository their ~/.minos/config names and copies it into their own
+            #home, with their own permissions: done here as root, a user could name a repository only
+            #root reads, or an option of git that runs a command (--upload-pack), and point the home's
+            #~/.ssh at a directory of root's for the keys to be copied into. What runs as the user gets
+            #neither debconf's pipe (stdin and fd 3) nor anything to read from it, and su -c starts it
+            #in a session of its own, away from root's terminal
             for user in ${users}; do
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
-                h="$(su "${user}" -c "echo ~" 2>/dev/null)"     || continue
-
-                dotrepo="$(busybox awk -v pattern="^dotfiles"        \
-                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                    "${h}/.minos/config" 2>/dev/null)"
-
-                if [ -z "${dotrepo}" ]; then
-                    dotrepo="$(busybox awk -v pattern="^dotfiles"    \
-                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                    /etc/minos/config 2>/dev/null)"
-                fi
-
-                [ -z "${dotrepo}" ] && continue
-
-                bdotrepo="$(busybox basename "${dotrepo}")"
-                busybox mkdir -p /tmp/minos-core-setting
-                git clone --depth=1 "${dotrepo}" /tmp/minos-core-setting/"${bdotrepo}" >/dev/null
-
-                for dotfile in /tmp/minos-core-setting/"${bdotrepo}"/.*; do
-                    [ ! -e "${dotfile}" ] && continue
-                    bdotfile="$(busybox basename "${dotfile}")"
-
-                    if [ X"${bdotfile}" = X"." ] || [ X"${bdotfile}" = X".." ]; then
-                        continue
-                    fi
-
-                    if [ -e "${h}"/"${bdotfile}" ]; then
-                        busybox diff -qr "${dotfile}" "${h}"/"${bdotfile}" >/dev/null 2>&1 && continue
-                    fi
-
-                    ownerdotfile="$(stat -c %U "${h}")" || ownerdotfile="${user}"
-                    groupdotfile="$(stat -c %G "${h}")" || groupdotfile="${user}"
-
-                    if [ -e "${h}"/"${bdotfile}" ]; then
-                        vdotfile="minos-backup.$(busybox date +"%d-%m-%Y-%H:%M")"
-                        printf "%s\\n" "${package}: old $user's ~/.${bdotfile} archive found, replacing and creating backup in ~/.${bdotfile}.${vdotfile}"
-                        su "${user}" -c "busybox mv \"${h}\"/\"${bdotfile}\" \"${h}\"/\"${bdotfile}\".\"${vdotfile}\"" >/dev/null 2>&1
-                    fi
-
-                    busybox cp    -r "${dotfile}" "${h}"/"${bdotfile}"
-                    busybox chown -R "${ownerdotfile}":"${groupdotfile}" "${h}"/"${bdotfile}"
-
-                    #special case, don't remove ssh keys
-                    old_ssh_conf="$(_get_last_file_version "${h}"/.ssh)"
-                    if [ -n "${old_ssh_conf}" ] && [ ! X"${old_ssh_conf}" = X"${h}"/.ssh ]; then
-                        busybox cp -- "${old_ssh_conf}"/* "${h}"/.ssh/
-                    fi
-                done; busybox rm -rf /tmp/minos-core-setting/
+                su "${user}" -c "sh ${user_dotfiles} install" </dev/null 3>&-
             done
             ;;
 
@@ -634,12 +666,8 @@ _enable_setting() {
 
                 for user in ${users}; do
                     su "${user}" -c "test -f ~/.minos/not_override" && continue
-                    su "${user}" -c "busybox mkdir -p ~/.vim/bundle/"
-                    su "${user}" -c "test -d ~/.vim/bundle/vundle/" || \
-                        su "${user}" -c "busybox cp -rL /etc/skel/.vim/bundle/vundle ~/.vim/bundle/vundle"
                     printf "%s\\n" "${package}: installing ${user}'s vim plugins"
-                    su "${user}" -c "vim -es -u ~/.vimrc -c \"BundleInstall\" -c qa" >/dev/null 2>&1
-                    #su "${user}" -c "vim +BundleInstall +qall" >/dev/null 2>&1
+                    su "${user}" -c "sh ${user_plugins} vim"
                 done
             fi
             ;;
@@ -662,11 +690,8 @@ _enable_setting() {
                 busybox cp -rL   "${package_dir}/cache/tmux/plugins/tundle" /etc/skel/.tmux/plugins/
                 for user in ${users}; do
                     su "${user}" -c "test -f ~/.minos/not_override" && continue
-                    su "${user}" -c "busybox mkdir -p ~/.tmux/plugins/" > /dev/null 2>&1
-                    su "${user}" -c "test -d ~/.tmux/plugins/tundle/" || \
-                        su "${user}" -c "busybox cp -rL /etc/skel/.tmux/plugins/tundle ~/.tmux/plugins/tundle"
                     printf "%s\\n" "${package}: installing ${user}'s tmux plugins"
-                    su "${user}" -c "sh ~/.tmux/plugins/tundle/scripts/install_plugins.sh" >/dev/null 2>&1
+                    su "${user}" -c "sh ${user_plugins} tmux"
                 done
             fi
             ;;
@@ -693,14 +718,8 @@ _enable_setting() {
 
                 for user in ${users}; do
                     su "${user}" -c "test -f ~/.minos/not_override" && continue
-                    su "${user}" -c "busybox mkdir -p ~/.shundle/bundle/" > /dev/null 2>&1
-                    su "${user}" -c "test -d ~/.shundle/bundle/shundle/" || \
-                        su "${user}" -c "busybox cp -rL /etc/skel/.shundle/bundle/shundle ~/.shundle/bundle/shundle"
                     printf "%s\\n" "${package}: installing ${user}'s shundle plugins"
-                    su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.bashrc \
-                        ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
-                    su "${user}" -c "SHUNDLE_HOME=~/.shundle SHUNDLE_RC=~/.profile.d/shundle.sh \
-                        ~/.shundle/bundle/shundle/bin/shundle install" >/dev/null 2>&1
+                    su "${user}" -c "sh ${user_plugins} shundle"
                 done
             fi
             ;;
@@ -750,16 +769,13 @@ _disable_setting() {
             _uninstall_minos_setting "${package_dir}/etc##sysctl.d##99-printk.conf"
             ;;
 
-        disable-ipv6)
-            _uninstall_minos_setting "${package_dir}/etc##sysctl.d##99-disable-ipv6.conf"
-            ;;
-
         apt)
             rm -rf /etc/apt/apt.conf.d/05disable-recommends
             rm -rf /etc/apt/apt.conf.d/05disable-suggests
             ;;
 
-        sudo) _uninstall_minos_setting "${package_dir}/etc##sudoers.d##minos-core" ;;
+        sudo) _uninstall_minos_setting "${package_dir}/etc##sudoers.d##minos-core" \
+                                       "${package_dir}/etc##sudoers.d##minos-tty-tickets" ;;
         ssh) _undiverge_element /etc/ssh/ssh_config "${package_dir}/etc##ssh##ssh_config" ;;
         git) _undiverge_element /etc/gitconfig "${package_dir}/etc##gitconfig" ;;
 
@@ -793,41 +809,10 @@ _disable_setting() {
         #app-core|app-purge) : ;; #what would be the reverse process?
 
         dotfiles)
+            #by each user, as on the install side
             for user in ${users}; do
                 su "${user}" -c "test -f ~/.minos/not_override" && continue
-                h="$(su "${user}" -c "echo ~" 2>/dev/null)"     || continue
-
-                dotrepo="$(busybox awk -v pattern="^dotfiles"        \
-                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                    "${h}"/.minos/config 2>/dev/null)"
-
-                if [ -z "${dotrepo}" ]; then
-                    dotrepo="$(busybox awk -v pattern="^dotfiles"    \
-                    '$0 ~ pattern {$1=""; print substr($0,2); exit}' \
-                    /etc/minos/config 2>/dev/null)"
-                fi
-
-                [ -z "${dotrepo}" ] && continue
-
-                bdotrepo="$(busybox basename "${dotrepo}")"
-                busybox mkdir -p /tmp/"${package}"
-                git clone --depth=1  "${dotrepo}" /tmp/"${package}/${bdotrepo}" >/dev/null
-
-                for dotfile in /tmp/"${package}/${bdotrepo}"/.*; do
-                    [ ! -e "${dotfile}" ] && continue
-                    bdotfile="$(busybox basename "${dotfile}")"
-
-                    #special case, don't recover ssh keys
-                    if [ X"${bdotfile}" = X"." ] || [ X"${bdotfile}" = X".." ] || [ X"${bdotfile}" = X".ssh" ]; then
-                        continue
-                    fi
-
-                    if [ -e "${h}"/"${bdotfile}" ]; then
-                        printf "%s\\n" "${package}: old $user's ~/.${bdotfile} archive found, recovering last state"
-                        _uninstall_element_system_users "${dotfile}" "${bdotfile}"
-                    fi
-
-                done; busybox rm -rf /tmp/"${package}"/
+                su "${user}" -c "sh ${user_dotfiles} uninstall" </dev/null 3>&-
             done
             ;;
 
@@ -870,6 +855,9 @@ case "${1}" in
     configure)
         #bugs, bugs everywhere: https://github.com/gitpython-developers/GitPython/issues/295
         chmod -x /usr/lib/git-core/git-credential-cache--daemon || :
+
+        #the files the older diverts left in the diverge directory go back before the modules divert again
+        _restore_undiverted
 
         if [ "${DEBCONFEXISTS}" = "true" ]; then
             #get user settings

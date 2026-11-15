@@ -1,0 +1,163 @@
+#!/bin/sh
+#install the vim, tmux and shell plugins of the user who runs it: the part of the vim, tmux and
+#shundle modules of minos-core-settings that happens inside a home. The postinst runs it for each
+#user there when the package is configured, /etc/profile.d/minos-user-plugins.sh at the login of a
+#user who came later (cloud-init creates the user at first boot on 22.04, adduser any time). Running
+#it again is harmless: a manager already in the home is kept, and it skips what it installed before
+#usage: user-plugins MODULE...   install these modules' plugins: vim tmux shundle
+#       user-plugins --login     those of the modules turned on that never ran in this home, once,
+#                                and only when the network answers
+
+package="minos-core-settings"
+modules="vim tmux shundle"
+#a module that ran in a home leaves a file here: a login reads them before doing anything else
+done_dir="${HOME}/.minos/plugins"
+lock="${done_dir}/.lock"
+locked=""
+interrupted=""
+
+#as in the postinst: the managers clone with placeholder credentials and nothing here needs the
+#system git configuration, whose credential helper (cache) would start a daemon holding what the
+#caller holds open, debconf's pipe or the terminal of a login. Nor may git ask for anything there
+GIT_CONFIG_NOSYSTEM="1"; export GIT_CONFIG_NOSYSTEM
+GIT_TERMINAL_PROMPT="0"; export GIT_TERMINAL_PROMPT
+#tundle installs as a script when it is not inside tmux, which is how the postinst runs it
+unset TMUX
+
+_usage() {
+    printf "%s\\n" "usage: user-plugins MODULE...   (${modules})" "       user-plugins --login"
+}
+
+_module_manager() { #$1 module => the directory of its manager, below a home
+    case "${1}" in
+        vim)     printf "%s" ".vim/bundle/vundle"      ;;
+        tmux)    printf "%s" ".tmux/plugins/tundle"    ;;
+        shundle) printf "%s" ".shundle/bundle/shundle" ;;
+        *)       printf "%s\\n" "user-plugins: unknown module '${1}'" >&2; return 1 ;;
+    esac
+}
+
+_install_module() { #$1 module: its manager from /etc/skel when the home lacks it, then its plugins
+    _install_module__manager="$(_module_manager "${1}")" || return 1
+    busybox mkdir -p "${HOME}/${_install_module__manager%/*}/" || return 1
+    if [ ! -d "${HOME}/${_install_module__manager}/" ]; then
+        busybox cp -rL "/etc/skel/${_install_module__manager}" "${HOME}/${_install_module__manager}" || return 1
+    fi
+
+    #the managers report what failed on their screen, never in their exit status (vim -es says 1
+    #after any message of any plugin): there is nothing to read in it, and the postinst never did
+    case "${1}" in
+        vim)  vim -es -u "${HOME}/.vimrc" -c "BundleInstall" -c qa ;;
+        tmux) sh "${HOME}/.tmux/plugins/tundle/scripts/install_plugins.sh" ;;
+        shundle)
+            SHUNDLE_HOME="${HOME}/.shundle" SHUNDLE_RC="${HOME}/.bashrc" \
+                "${HOME}/.shundle/bundle/shundle/bin/shundle" install
+            SHUNDLE_HOME="${HOME}/.shundle" SHUNDLE_RC="${HOME}/.profile.d/shundle.sh" \
+                "${HOME}/.shundle/bundle/shundle/bin/shundle" install
+            ;;
+    esac </dev/null >/dev/null 2>&1
+    return 0
+}
+
+_mark_module() { #$1 module: it ran in this home, a login leaves it alone from now on
+    printf "%s\\n" "#${package} installed the ${1} plugins of this home; remove this file and the next login installs them again" \
+        > "${done_dir}/${1}"
+}
+
+_lock_home() { #one run per home at a time: a desktop session opens its scratchpad terminal and the
+    #user another one at once, and both would clone into the same directories. ln -s is atomic and
+    #carries the pid of its owner: a link whose owner is gone was left by a run that was killed
+    if ! ln -s "${$}" "${lock}" 2>/dev/null; then
+        kill -0 "$(readlink "${lock}")" 2>/dev/null && return 1
+        rm -f "${lock}" && ln -s "${$}" "${lock}" 2>/dev/null || return 1
+    fi
+    locked="yes"
+}
+
+_unlock_home() {
+    if [ -n "${locked}" ] && [ X"$(readlink "${lock}")" = X"${$}" ]; then
+        rm -f "${lock}"
+    fi
+}
+
+_install_modules() { #$@ modules, the postinst's call: each one installed and marked
+    busybox mkdir -p "${done_dir}" || return 1
+    _lock_home || { printf "%s\\n" "user-plugins: another run is installing the plugins of ${HOME}" >&2; return 1; }
+    _install_modules__status="0"
+    for _install_modules__module; do
+        if _install_module "${_install_modules__module}"; then
+            [ -z "${interrupted}" ] || return 1
+            _mark_module "${_install_modules__module}" || _install_modules__status="1"
+        else
+            _install_modules__status="1"
+        fi
+    done
+    return "${_install_modules__status}"
+}
+
+_login() { #the modules turned on that never ran in this home, with the network up; one line says so
+    _login__pending=""
+    for _login__module in ${modules}; do
+        #a module turned off (dpkg-reconfigure minos-core-settings), or whose manager could not be
+        #fetched, has no manager in /etc/skel: nothing to copy from, as for the postinst
+        [ -d "/etc/skel/$(_module_manager "${_login__module}")" ] || continue
+        [ -f "${done_dir}/${_login__module}" ] && continue
+        _login__pending="${_login__pending} ${_login__module}"
+    done
+    [ -n "${_login__pending}" ] || return 0
+
+    #the users the postinst installs for: neither root nor the accounts of the system
+    _login__uid="$(id -u)"
+    [ "${_login__uid}" -ge 1000 ] && [ "${_login__uid}" -lt 60000 ] || return 0
+
+    busybox mkdir -p "${done_dir}" || return 1
+    if ! _lock_home; then
+        printf "%s\\n" "minos: another login is installing your plugins"
+        return 1
+    fi
+    printf "%s" "minos: installing your${_login__pending} plugins, once (Ctrl-C: at the next login) ..."
+
+    #the origin of the first manager answers for the network: without it every clone fails, and
+    #only a run that had it counts. 10 seconds at most, so that a login without it goes on
+    _login__first="${_login__pending# }"; _login__first="${_login__first%% *}"
+    _login__origin="/etc/skel/$(_module_manager "${_login__first}")"
+    _login__url="$(git config --file "${_login__origin}/.git/config" remote.origin.url)"
+    if [ -z "${_login__url}" ]; then
+        printf " %s\\n" "${_login__origin} names no origin to reach"
+        return 1
+    fi
+    if ! timeout 10 git ls-remote "${_login__url}" HEAD </dev/null >/dev/null 2>&1; then
+        _login__host="${_login__url#*://}"
+        printf " %s\\n" "${_login__host%%/*} does not answer, the next login tries again"
+        return 1
+    fi
+
+    _login__start="$(date +%s)"
+    for _login__module in ${_login__pending}; do
+        if [ -z "${interrupted}" ] && ! _install_module "${_login__module}"; then
+            printf " %s\\n" "${_login__module} failed, the next login tries again"
+            return 1
+        fi
+        [ -z "${interrupted}" ] || { printf " %s\\n" "interrupted, the next login goes on"; return 1; }
+        _mark_module "${_login__module}" || { printf " %s\\n" "cannot write ${done_dir}"; return 1; }
+    done
+    printf " %s\\n" "done in $(($(date +%s) - _login__start))s"
+}
+
+[ -n "${HOME}" ] && [ -d "${HOME}" ] || { printf "%s\\n" "user-plugins: no home to install into" >&2; exit 1; }
+#a home with this file is its owner's alone
+[ -f "${HOME}/.minos/not_override" ] && exit 0
+
+#Ctrl-C stops after the step it interrupts, which is not marked. Leaving through exit and not through
+#the signal lets the shell of the login go on reading its profile
+trap 'interrupted="yes"' INT
+trap '_unlock_home' EXIT
+trap 'exit 1' HUP TERM
+
+case "${1}" in
+    --login) _login ;;
+    ""|-*)   _usage >&2; exit 1 ;;
+    *)       _install_modules "${@}" ;;
+esac
+
+# vim: set ts=8 sw=4 tw=0 ft=sh :
